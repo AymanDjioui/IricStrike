@@ -133,7 +133,10 @@ def main():
     audit = _audit_path(scope_path, project_dir)
 
     if not _is_active(tool_name):
-        _log(audit, {"event": "passive", "tool": tool_name})
+        # Audit is per-engagement: only record passive calls while one is active,
+        # so enabling the plugin globally doesn't log every tool call in every project.
+        if scope_path:
+            _log(audit, {"event": "passive", "tool": tool_name})
         sys.exit(EXIT_ALLOW)
 
     if not engine_ok:

@@ -99,6 +99,12 @@ class TestHook(unittest.TestCase):
                       self._with_scope_env())
         self.assertEqual(p.returncode, 2)
 
+    def test_passive_without_engagement_writes_no_log(self):
+        # plugin enabled but no engagement active -> stay silent (no audit spam)
+        p = self._run({"tool_name": "Read", "tool_input": {"file_path": "/etc/hosts"}}, {})
+        self.assertEqual(p.returncode, 0)
+        self.assertFalse(self.audit.exists())
+
     # --- via project pointer file (what /engage writes) ---
 
     def test_active_via_pointer_file(self):
