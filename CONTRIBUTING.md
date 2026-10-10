@@ -33,8 +33,9 @@ These two are safety-critical. Changes to `scope-guard/` or `evidence-pipeline/`
 - keep the **out-of-scope-wins** and **nothing-embeds-unconfirmed** invariants;
 - come with tests. Add cases for the behavior you change; don't weaken existing ones.
 
-Run `claude plugin validate .` before submitting if you touched the manifest, commands,
-hooks, or skills.
+Validate the plugin before submitting if you touched the manifest, commands, hooks, or
+skills. With the Claude Code CLI: `claude plugin validate .`. Without it (no CLI / Node
+toolchain): `python3 scripts/validate.py` (same structural checks, Python only).
 
 ## Adding a skill
 
