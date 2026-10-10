@@ -105,6 +105,17 @@ class TestHook(unittest.TestCase):
         self.assertEqual(p.returncode, 0)
         self.assertFalse(self.audit.exists())
 
+    def test_nested_target_extracted(self):
+        # HexStrike http_repeater nests the URL in request_spec.url
+        ok = self._run({"tool_name": "mcp__hexstrike-ai__http_repeater",
+                        "tool_input": {"request_spec": {"url": "https://api.acme.example/x"}}},
+                       self._with_scope_env())
+        self.assertEqual(ok.returncode, 0)
+        bad = self._run({"tool_name": "mcp__hexstrike-ai__http_repeater",
+                         "tool_input": {"request_spec": {"url": "https://blog.acme.example/x"}}},
+                        self._with_scope_env())
+        self.assertEqual(bad.returncode, 2)
+
     # --- via project pointer file (what /engage writes) ---
 
     def test_active_via_pointer_file(self):

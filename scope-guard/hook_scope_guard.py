@@ -80,18 +80,36 @@ def _is_active(tool_name):
 
 
 def _extract_targets(tool_input):
+    """Collect target-bearing values, including ones nested inside objects.
+
+    Some tools nest the target (e.g. HexStrike's http_repeater puts it in
+    request_spec.url), so we walk the whole input and pick up any key named in
+    TARGET_KEYS at any depth. Still fail-closed: when nothing target-like is
+    found (e.g. a free-form ``command`` field), the caller blocks.
+    """
     found = []
-    if not isinstance(tool_input, dict):
-        return found
-    for key in TARGET_KEYS:
-        val = tool_input.get(key)
-        if val in (None, "", [], {}):
-            continue
-        if isinstance(val, (list, tuple)):
-            found.extend(str(v) for v in val if v)
-        else:
-            found.append(str(val))
-    return found
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(k, str) and k.lower() in TARGET_KEYS and v not in (None, "", [], {}):
+                    if isinstance(v, (list, tuple)):
+                        found.extend(str(x) for x in v if x not in (None, ""))
+                    elif isinstance(v, (str, int)):
+                        found.append(str(v))
+                if isinstance(v, (dict, list, tuple)):
+                    walk(v)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                walk(item)
+
+    walk(tool_input if isinstance(tool_input, dict) else {})
+    seen, out = set(), []
+    for t in found:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 
 def _block(audit, reason, **a):
