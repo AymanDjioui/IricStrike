@@ -60,9 +60,9 @@ Claude Code
 | :- | :- |
 | Scope-guard (engine, enforcement hook, MCP tool, audit log) | **done, 50 tests** |
 | Plugin manifest + skeleton (commands, skill categories) | **done** |
-| Evidence pipeline (recon + PoC capture → confirm → embed, +PDF) | in progress |
-| Example skills (recon-methodology, web-enum, evidence-hygiene, report-writing) | planned |
-| CONTRIBUTING / SECURITY | planned |
+| Evidence pipeline (recon + PoC capture → confirm → embed, +PDF) | **done, 14 tests** |
+| Example skills (recon-methodology, web-enum, evidence-hygiene, report-writing) | **done** |
+| CONTRIBUTING / SECURITY | **done** |
 
 ## Install (Claude Code)
 
@@ -100,7 +100,8 @@ packaging is post-MVP.
 ## Tests
 
 ```bash
-cd scope-guard && PYTHONPATH=. python3 -m unittest discover -s tests
+cd scope-guard       && PYTHONPATH=.                  python3 -m unittest discover -s tests
+cd evidence-pipeline && PYTHONPATH=".:../scope-guard"  python3 -m unittest discover -s tests
 ```
 
 ## License
