@@ -100,20 +100,24 @@ def main(root: Path) -> int:
     else:
         err("hooks/hooks.json not found")
 
+    servers = {}
     mj = root / ".mcp.json"
     if mj.is_file():
-        mc = json.loads(mj.read_text())
+        servers.update(json.loads(mj.read_text()).get("mcpServers", {}))
         ok(".mcp.json parses")
-        for sv, cfg in mc.get("mcpServers", {}).items():
-            if not cfg.get("command"):
-                err(f"mcp server {sv}: no command")
-            for a in cfg.get("args", []):
-                if "${CLAUDE_PLUGIN_ROOT}" in a:
-                    rp = root / a.replace("${CLAUDE_PLUGIN_ROOT}/", "")
-                    ok(f"mcp server file exists: {rp.relative_to(root)}") if rp.is_file() \
-                        else err(f"mcp server file missing: {a}")
-    else:
-        err(".mcp.json not found")
+    if isinstance(m.get("mcpServers"), dict):
+        servers.update(m["mcpServers"])
+        ok("plugin.json declares mcpServers")
+    if not servers:
+        warn("no MCP servers declared")
+    for sv, cfg in servers.items():
+        if not cfg.get("command"):
+            err(f"mcp server {sv}: no command")
+        for a in cfg.get("args", []):
+            if "${CLAUDE_PLUGIN_ROOT}" in a:
+                rp = root / a.replace("${CLAUDE_PLUGIN_ROOT}/", "")
+                ok(f"mcp server file exists: {rp.relative_to(root)}") if rp.is_file() \
+                    else err(f"mcp server file missing: {a}")
 
     found = 0
     for p in m.get("skills", []):
