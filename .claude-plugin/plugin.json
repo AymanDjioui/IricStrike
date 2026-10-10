@@ -1,0 +1,12 @@
+{
+  "name": "iricstrike",
+  "displayName": "IricStrike",
+  "version": "0.1.0",
+  "description": "Orchestration layer that turns Claude Code into an authorized pentest/red-team operator: a fail-closed scope-guard on every active tool call, cross-category skills, an engagement workflow, and an automated capture-then-confirm evidence/report pipeline. Wires HexStrike AI + Burp Suite MCP for tool execution.",
+  "author": { "name": "Ayman Djioui", "url": "https://github.com/AymanDjioui" },
+  "homepage": "https://github.com/AymanDjioui/IricStrike",
+  "repository": "https://github.com/AymanDjioui/IricStrike",
+  "license": "MIT",
+  "keywords": ["pentest", "red-team", "security", "bug-bounty", "scope-guard", "mcp", "orchestration", "recon"],
+  "skills": ["./skills/network-infra/", "./skills/web/", "./skills/recon/", "./skills/reporting/"]
+}

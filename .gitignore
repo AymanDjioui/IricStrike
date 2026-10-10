@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Engagement data is sensitive and operator-specific — never commit it.
+engagements/
+*.audit.jsonl
+audit.jsonl
+evidence/
+
+# Active-engagement pointer + local audit log
+.iricstrike/

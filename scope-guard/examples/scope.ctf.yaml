@@ -1,0 +1,12 @@
+# Permissive engagement: CTF/lab targets are all in scope ("you have all
+# scope"). in_scope is optional here. out_of_scope still applies, so you can
+# keep active tooling off shared infrastructure like the VPN gateway range.
+engagement:
+  name: htb-season
+  type: ctf
+  program: "Hack The Box - Seasonal"
+
+scope:
+  in_scope: []
+  out_of_scope:
+    - "10.10.14.0/23"       # keep off the lab VPN gateway range

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "iricstrike-scope-guard": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scope-guard/server.py"],
+      "env": { "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/scope-guard" }
+    }
+  }
+}

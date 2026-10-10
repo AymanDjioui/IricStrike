@@ -1,0 +1,19 @@
+# Strict engagement: fail-closed. A target must match in_scope AND must not
+# match out_of_scope. out_of_scope wins over in_scope (the wildcard below
+# authorizes all subdomains, but blog./careers. are carved back out).
+engagement:
+  name: acme-public-bbp
+  type: bug-bounty
+  program: "Acme Public Bug Bounty"
+  start: 2026-01-01
+  end: 2026-12-31
+
+scope:
+  in_scope:
+    - "*.acme.example"      # any subdomain, any depth
+    - "acme.example"        # apex is separate from the wildcard
+    - "203.0.113.0/24"      # an authorized CIDR
+  out_of_scope:
+    - "blog.acme.example"   # excluded even though *.acme.example covers it
+    - "careers.acme.example"
+    - "203.0.113.200"       # one carved-out host inside the CIDR
