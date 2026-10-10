@@ -1,7 +1,7 @@
 {
   "name": "iricstrike",
   "displayName": "IricStrike",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Orchestration layer that turns Claude Code into an authorized pentest/red-team operator: a fail-closed scope-guard on every active tool call, cross-category skills, an engagement workflow, and an automated capture-then-confirm evidence/report pipeline. Wires HexStrike AI + Burp Suite MCP for tool execution.",
   "author": {
     "name": "Ayman Djioui",
