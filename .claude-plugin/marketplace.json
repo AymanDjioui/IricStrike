@@ -1,0 +1,12 @@
+{
+  "name": "iricstrike",
+  "owner": { "name": "Ayman Djioui", "url": "https://github.com/AymanDjioui" },
+  "description": "IricStrike: an authorized pentest/red-team orchestration plugin for Claude Code.",
+  "plugins": [
+    {
+      "name": "iricstrike",
+      "source": ".",
+      "description": "Turns Claude Code into an authorized pentest operator: a fail-closed scope-guard on every active tool call, an engagement workflow, cross-category skills, and an automated capture-then-confirm evidence/report pipeline."
+    }
+  ]
+}

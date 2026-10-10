@@ -66,17 +66,27 @@ Claude Code
 
 ## Install (Claude Code)
 
-1. **Clone** this repo.
-2. **Requirements**: Python 3.10+ with `PyYAML` and the MCP Python SDK (`mcp`) for
-   the scope-guard server. For tool execution, run the external MCP servers you need
-   (see below). `gowitness` is required for the recon-screenshot path.
-3. **Add the plugin** in Claude Code (via the `/plugin` interface, or load it in
-   place for development with `--plugin-dir /path/to/IricStrike`). Validate with:
-   ```bash
-   claude plugin validate /path/to/IricStrike
-   ```
-4. **Start an engagement**: run `/engage` to create and activate a `scope.yaml`.
-   Active tools are gated from that point on.
+**One step** (Claude Code 2.1.275+):
+
+```
+/plugin install iricstrike --marketplace AymanDjioui/IricStrike
+```
+
+Or in two steps:
+
+```
+/plugin marketplace add AymanDjioui/IricStrike
+/plugin install iricstrike@iricstrike
+```
+
+For development, load it in place instead with `--plugin-dir /path/to/IricStrike`, and
+validate with `claude plugin validate /path/to/IricStrike` — or, without the CLI,
+`python3 scripts/validate.py`.
+
+**Requirements:** Python 3.10+ with `PyYAML` and the MCP Python SDK (`mcp`) for the
+scope-guard server; `gowitness` for the recon-screenshot path; and the external
+tool-execution MCP servers below. Then run **`/engage`** to declare an engagement —
+active tools are scope-gated from that point on.
 
 ### External tool-execution MCP servers (you configure these)
 
