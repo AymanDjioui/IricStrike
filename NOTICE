@@ -1,0 +1,14 @@
+IricStrike
+Copyright (c) 2026 Ayman Djioui
+
+This product is licensed under the MIT License (see LICENSE), with one exception:
+
+The web vulnerability-class playbooks under `skills/hunt/` are vendored unmodified
+from Claude-BugHunter (https://github.com/elementalsouls/Claude-BugHunter) by
+Sachin Sharma, and are licensed under CC BY 4.0 — not MIT. See
+`skills/hunt/ATTRIBUTION.md` and `skills/hunt/LICENSE.CC-BY-4.0.txt`.
+
+IricStrike depends on, but does not vendor, these external tools (run as separate
+MCP servers):
+- HexStrike AI — MIT License (github.com/0x4m4/hexstrike-ai)
+- Burp Suite MCP — GPL-3.0 (github.com/PortSwigger/mcp-server)

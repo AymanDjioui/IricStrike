@@ -114,6 +114,18 @@ cd scope-guard       && PYTHONPATH=.                  python3 -m unittest discov
 cd evidence-pipeline && PYTHONPATH=".:../scope-guard"  python3 -m unittest discover -s tests
 ```
 
+## Vuln-class playbooks
+
+`skills/hunt/` bundles **58 web vulnerability-class playbooks** (IDOR, SSRF, XSS,
+SQLi, auth-bypass, SSTI, XXE, JWT, OAuth, SAML, GraphQL, race-condition,
+business-logic, request-smuggling, and more), built from public bug-bounty reports.
+They give the engagement workflow real methodology to hunt from, while every active
+tool call still passes through the scope-guard.
+
+These are vendored from [Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter)
+(Sachin Sharma) under **CC BY 4.0** — see [NOTICE](NOTICE) and
+[skills/hunt/ATTRIBUTION.md](skills/hunt/ATTRIBUTION.md).
+
 ## License
 
 [MIT](LICENSE) © 2026 Ayman Djioui. HexStrike AI is MIT; the Burp MCP servers are
