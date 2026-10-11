@@ -17,3 +17,14 @@ before any active discovery.
    for the redaction review.
 
 Summarize the attack surface found and hand off to `/scan` or `/triage`.
+
+## Automated pipeline (scope-gated)
+For breadth recon on a program root, use the recon pipeline — it enumerates
+subdomains, filters them against the active scope, probes only in-scope hosts, and
+produces a triage report with leads:
+```
+python3 -m recon_pipeline --root <program-root> --out engagements/<name>/recon.md [--nuclei]
+```
+Every discovered host is scope-checked before it is touched; out-of-scope assets are
+listed but never probed. Review the "leads worth a manual look" section, then hand
+interesting hosts to `/iricstrike:scan` for targeted testing.
