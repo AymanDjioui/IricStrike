@@ -40,8 +40,29 @@ DEFAULT_ACTIVE_RE = (
     r"(?i)(hexstrike|burp|gowitness|nuclei|nmap|ffuf|sqlmap|"
     r"amass|subfinder|httpx|masscan|feroxbuster|gobuster|katana)"
 )
+# Burp's MCP request-senders (send_http1_request, send_http2_request,
+# create_repeater_tab[_http2], send_to_intruder) all implement HttpServiceParams
+# and carry their destination in `targetHostname` -- hence it's a target key.
 TARGET_KEYS = ("target", "targets", "url", "urls", "host", "hostname",
-               "domain", "ip", "ip_address", "rhost", "rhosts")
+               "targethostname", "domain", "ip", "ip_address", "rhost", "rhosts")
+
+# Read-only / local-transform / config Burp MCP tools. They send NO traffic to a
+# target host (in Burp's MCP, only the HttpServiceParams senders above reach the
+# network, and those are caught as active and scope-checked on targetHostname).
+# Gating these on a target is impossible -- they have no target argument -- so the
+# generic "active tool with no target -> fail closed" rule would wedge them. This
+# is a sound exemption, not a convenience: no-target Burp tool == no target touch.
+# Matched against the full MCP tool name (e.g. mcp__burp__get_proxy_http_history),
+# tolerant of any server-name variant between "burp" and the tool suffix.
+BURP_PASSIVE_RE = re.compile(
+    r"(?i)burp.*?__("
+    r"get_\w+|output_\w+|"                      # history / issues / organizer / editor / collaborator readers
+    r"url_encode|url_decode|base64_encode|base64_decode|"   # local encoders
+    r"generate_random_string|generate_collaborator_payload|"
+    r"set_project_options|set_user_options|"               # config writes (no target)
+    r"set_task_execution_engine_state|set_proxy_intercept_state|"  # state toggles
+    r"set_active_editor_contents)$"
+)
 
 
 def _now():
@@ -72,11 +93,16 @@ def _log(audit, record):
 
 
 def _is_active(tool_name):
+    name = tool_name or ""
+    # Read-only / local Burp tools are passive even though their name matches
+    # "burp" in the active pattern -- let them through (they touch no target).
+    if BURP_PASSIVE_RE.search(name):
+        return False
     pat = os.environ.get("IRICSTRIKE_ACTIVE_RE", DEFAULT_ACTIVE_RE)
     try:
-        return re.search(pat, tool_name or "") is not None
+        return re.search(pat, name) is not None
     except re.error:
-        return re.search(DEFAULT_ACTIVE_RE, tool_name or "") is not None
+        return re.search(DEFAULT_ACTIVE_RE, name) is not None
 
 
 def _extract_targets(tool_input):

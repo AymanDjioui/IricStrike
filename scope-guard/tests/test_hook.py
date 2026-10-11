@@ -116,6 +116,42 @@ class TestHook(unittest.TestCase):
                         self._with_scope_env())
         self.assertEqual(bad.returncode, 2)
 
+    # --- Burp MCP: passive viewers exempt, senders scope-checked on targetHostname ---
+
+    def test_burp_passive_history_waved_through(self):
+        # read-only viewer, no target argument -> must NOT fail closed
+        p = self._run({"tool_name": "mcp__burp__get_proxy_http_history",
+                       "tool_input": {"count": 50, "offset": 0}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(self._events()[-1]["event"], "passive")
+
+    def test_burp_local_encoder_waved_through(self):
+        p = self._run({"tool_name": "mcp__burp__base64_encode",
+                       "tool_input": {"content": "x"}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(self._events()[-1]["event"], "passive")
+
+    def test_burp_sender_in_scope_allows(self):
+        p = self._run({"tool_name": "mcp__burp__send_http1_request",
+                       "tool_input": {"content": "GET / HTTP/1.1", "targetHostname": "api.acme.example",
+                                      "targetPort": 443, "usesHttps": True}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(self._events()[-1]["event"], "allow")
+
+    def test_burp_sender_out_of_scope_blocks(self):
+        p = self._run({"tool_name": "mcp__burp__send_http1_request",
+                       "tool_input": {"content": "GET / HTTP/1.1", "targetHostname": "blog.acme.example",
+                                      "targetPort": 443, "usesHttps": True}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("out_of_scope", p.stderr)
+
+    def test_burp_sender_without_target_fails_closed(self):
+        # a sender that somehow lost its targetHostname must still block, not pass
+        p = self._run({"tool_name": "mcp__burp__send_to_intruder",
+                       "tool_input": {"content": "GET / HTTP/1.1"}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("no target", p.stderr)
+
     # --- via project pointer file (what /engage writes) ---
 
     def test_active_via_pointer_file(self):
