@@ -1,7 +1,7 @@
 {
   "name": "iricstrike",
   "displayName": "IricStrike",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Orchestration layer that turns Claude Code into an authorized pentest/red-team operator: a fail-closed scope-guard on every active tool call, cross-category skills, an engagement workflow, and an automated capture-then-confirm evidence/report pipeline. Wires HexStrike AI + Burp Suite MCP for tool execution.",
   "author": {
     "name": "Ayman Djioui",
@@ -21,12 +21,29 @@
     "recon"
   ],
   "skills": [
+    "./skills/active-directory/",
+    "./skills/ai/",
+    "./skills/api/",
+    "./skills/auth/",
+    "./skills/cicd/",
+    "./skills/cloud/",
+    "./skills/container/",
+    "./skills/crypto/",
+    "./skills/exploit-dev/",
+    "./skills/forensics/",
+    "./skills/fuzzing/",
+    "./skills/iot/",
+    "./skills/mobile/",
     "./skills/network-infra/",
-    "./skills/web/",
+    "./skills/post-exploitation/",
+    "./skills/privesc/",
     "./skills/recon/",
     "./skills/reporting/",
-    "./skills/hunt/",
-    "./skills/red/"
+    "./skills/social-engineering/",
+    "./skills/supply-chain/",
+    "./skills/utility/",
+    "./skills/web/",
+    "./skills/wireless/"
   ],
   "mcpServers": {
     "iricstrike-scope-guard": {

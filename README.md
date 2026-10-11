@@ -114,20 +114,19 @@ cd scope-guard       && PYTHONPATH=.                  python3 -m unittest discov
 cd evidence-pipeline && PYTHONPATH=".:../scope-guard"  python3 -m unittest discover -s tests
 ```
 
-## Skill library (reused, attributed)
+## Skill library (141 skills, by category)
 
-**`skills/hunt/`** — 58 web vulnerability-class playbooks (IDOR, SSRF, XSS, SQLi,
-auth-bypass, SSTI, XXE, JWT, OAuth, SAML, GraphQL, race-condition, business-logic,
-request-smuggling, ...) from [Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter)
-(CC BY 4.0).
+Skills live under `skills/<category>/` (active-directory, ai, api, auth, cicd, cloud,
+container, crypto, exploit-dev, forensics, fuzzing, iot, mobile, network-infra,
+post-exploitation, privesc, recon, reporting, social-engineering, supply-chain,
+utility, web, wireless). Each skill's origin is in its name prefix:
 
-**`skills/red/`** — 79 cross-category offensive skills (active-directory, cloud,
-wireless, mobile, network, exploit-dev, privesc, post-exploitation, container, iot,
-crypto, forensics, social-engineering, ...) from [claude-red](https://github.com/SnailSploit/claude-red)
-(MIT).
+- **`hunt-*`** (58) — web vuln-class playbooks from [Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) (CC BY 4.0)
+- **`offensive-*`** (79) — cross-category offensive skills from [claude-red](https://github.com/SnailSploit/claude-red) (MIT)
+- the rest — original IricStrike skills
 
-Both are reused with attribution (see [NOTICE](NOTICE)) and are guidance only — every
-active tool call still passes through the scope-guard.
+Reused with attribution (see [NOTICE](NOTICE) and [skills/ATTRIBUTION.md](skills/ATTRIBUTION.md));
+guidance only — every active tool call still passes through the scope-guard.
 
 ## License
 

@@ -1,19 +1,15 @@
 IricStrike
 Copyright (c) 2026 Ayman Djioui
 
-This product is licensed under the MIT License (see LICENSE), with one exception:
+Licensed under the MIT License (see LICENSE), except the vendored skills under
+skills/, which retain their upstream licenses:
 
-The web vulnerability-class playbooks under `skills/hunt/` are vendored unmodified
-from Claude-BugHunter (https://github.com/elementalsouls/Claude-BugHunter) by
-Sachin Sharma, and are licensed under CC BY 4.0 — not MIT. See
-`skills/hunt/ATTRIBUTION.md` and `skills/hunt/LICENSE.CC-BY-4.0.txt`.
+- skills named hunt-*       — from Claude-BugHunter (CC BY 4.0)
+- skills named offensive-*  — from claude-red (MIT)
+
+See skills/ATTRIBUTION.md and the license texts in skills/.
 
 IricStrike depends on, but does not vendor, these external tools (run as separate
 MCP servers):
-- HexStrike AI — MIT License (github.com/0x4m4/hexstrike-ai)
+- HexStrike AI — MIT (github.com/0x4m4/hexstrike-ai)
 - Burp Suite MCP — GPL-3.0 (github.com/PortSwigger/mcp-server)
-
-The cross-category offensive skills under `skills/red/` are from claude-red
-(https://github.com/SnailSploit/claude-red) by SnailSploit, licensed under the MIT
-License (see `skills/red/LICENSE.MIT.txt` and `skills/red/ATTRIBUTION.md`). 51 are
-included as-is; 28 were converted from claude-red's custom format to native SKILL.md.
