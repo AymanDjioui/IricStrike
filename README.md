@@ -114,9 +114,24 @@ cd scope-guard       && PYTHONPATH=.                  python3 -m unittest discov
 cd evidence-pipeline && PYTHONPATH=".:../scope-guard"  python3 -m unittest discover -s tests
 ```
 
+## Skill library (reused, attributed)
+
+**`skills/hunt/`** — 58 web vulnerability-class playbooks (IDOR, SSRF, XSS, SQLi,
+auth-bypass, SSTI, XXE, JWT, OAuth, SAML, GraphQL, race-condition, business-logic,
+request-smuggling, ...) from [Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter)
+(CC BY 4.0).
+
+**`skills/red/`** — 79 cross-category offensive skills (active-directory, cloud,
+wireless, mobile, network, exploit-dev, privesc, post-exploitation, container, iot,
+crypto, forensics, social-engineering, ...) from [claude-red](https://github.com/SnailSploit/claude-red)
+(MIT).
+
+Both are reused with attribution (see [NOTICE](NOTICE)) and are guidance only — every
+active tool call still passes through the scope-guard.
+
 ## Vuln-class playbooks
 
-`skills/hunt/` bundles **58 web vulnerability-class playbooks** (IDOR, SSRF, XSS,
+DELETED `skills/hunt/` bundles **58 web vulnerability-class playbooks** (IDOR, SSRF, XSS,
 SQLi, auth-bypass, SSTI, XXE, JWT, OAuth, SAML, GraphQL, race-condition,
 business-logic, request-smuggling, and more), built from public bug-bounty reports.
 They give the engagement workflow real methodology to hunt from, while every active

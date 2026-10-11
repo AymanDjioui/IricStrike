@@ -12,3 +12,8 @@ IricStrike depends on, but does not vendor, these external tools (run as separat
 MCP servers):
 - HexStrike AI — MIT License (github.com/0x4m4/hexstrike-ai)
 - Burp Suite MCP — GPL-3.0 (github.com/PortSwigger/mcp-server)
+
+The cross-category offensive skills under `skills/red/` are from claude-red
+(https://github.com/SnailSploit/claude-red) by SnailSploit, licensed under the MIT
+License (see `skills/red/LICENSE.MIT.txt` and `skills/red/ATTRIBUTION.md`). 51 are
+included as-is; 28 were converted from claude-red's custom format to native SKILL.md.
