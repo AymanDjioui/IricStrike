@@ -26,6 +26,10 @@ SAFE_COOKIES = {
 _SESSION_HINTS = ("session", "sessid", "sid", "phpsessid", "jsessionid",
                   "auth", "token", "csrf", "xsrf", "remember")
 
+# Values that already look redacted, so re-flagging a redacted artifact doesn't
+# re-trip must-redact (name-based detectors otherwise fire on the placeholder).
+_REDACTED_RE = re.compile(r"(?i)(redact|\*\*\*|\bx{4,}\b|\[hidden\]|placeholder|^<[^>]*>$)")
+
 
 def _mask(v: str) -> str:
     v = str(v)
@@ -38,6 +42,12 @@ def _mask_email(e: str) -> str:
         return (local[0] if local else "") + "***@" + dom
     except ValueError:
         return "***"
+
+
+def _is_redacted(value: str) -> bool:
+    """True if a value already looks like a redaction placeholder."""
+    v = (value or "").strip().strip('"').strip("'")
+    return bool(v) and bool(_REDACTED_RE.search(v))
 
 
 def _flag(category, label, severity, guidance, sample):
@@ -68,6 +78,9 @@ def _cookie_pairs(header: str, rest: str):
 
 
 def _classify_cookie(header, name, value):
+    if _is_redacted(value):
+        return _flag("redacted", f"{header}: {name}", "ok",
+                     "Already masked/redacted.", f"{name}=<redacted>")
     if name.lower() in SAFE_COOKIES:
         return _flag("metadata-ok", f"{header}: {name}", "ok",
                      "Safe to leave (CDN/analytics cookie).", f"{name}=...")
@@ -92,14 +105,22 @@ def scan_text(text: str) -> list:
         m = re.match(r"(?i)^(authorization)\s*:\s*(\S+)[ \t]+(\S+)", line)
         if m:
             scheme, val = m.group(2), m.group(3)
-            flags.append(_flag("secret", f"Authorization: {scheme}", "must-redact",
-                               "Mask the Authorization header value.",
-                               f"{scheme} " + _mask(val)))
+            if _is_redacted(val):
+                flags.append(_flag("redacted", f"Authorization: {scheme}", "ok",
+                                   "Already masked/redacted.", f"{scheme} <redacted>"))
+            else:
+                flags.append(_flag("secret", f"Authorization: {scheme}", "must-redact",
+                                   "Mask the Authorization header value.",
+                                   f"{scheme} " + _mask(val)))
 
         m = re.match(r"(?i)^(x-api-key|api[_-]?key|apikey)\s*:\s*(\S+)", line)
         if m:
-            flags.append(_flag("secret", f"{m.group(1)} header", "must-redact",
-                               "Mask the API key value.", _mask(m.group(2))))
+            if _is_redacted(m.group(2)):
+                flags.append(_flag("redacted", f"{m.group(1)} header", "ok",
+                                   "Already masked/redacted.", "<redacted>"))
+            else:
+                flags.append(_flag("secret", f"{m.group(1)} header", "must-redact",
+                                   "Mask the API key value.", _mask(m.group(2))))
 
         m = re.match(r"(?i)^(set-cookie|cookie)\s*:\s*(.+)$", line)
         if m:

@@ -33,6 +33,13 @@ class TestRedaction(unittest.TestCase):
         self.assertTrue(any(f["label"] == "email address" and f["severity"] == "review"
                             for f in flags))
 
+    def test_redacted_placeholder_not_must_redact(self):
+        for red in ("session=<REDACTED-SESSION-COOKIE>", "session=st***PN",
+                    "session=XXXXXXXX"):
+            flags = scan_text("Set-Cookie: " + red + "; Path=/")
+            self.assertFalse(any(f["severity"] == "must-redact" for f in flags),
+                             f"redacted value re-tripped must-redact: {red}")
+
     def test_clean_text_no_must_redact(self):
         flags = scan_text("GET /health HTTP/1.1\nHost: api.example\nAccept: application/json")
         self.assertFalse(any(f["severity"] == "must-redact" for f in flags))
