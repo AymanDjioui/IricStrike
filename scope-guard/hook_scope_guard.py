@@ -250,6 +250,8 @@ def _handle_bash(tool_input, engine_ok, scope_path, audit):
                    f"tier-1 tool {binaries} but no target found in the command "
                    "-- allowing (block-on-proof)", tier=1, binaries=binaries)
 
+    # The scope decision runs on the FULL target; _strip_query is applied only
+    # when writing the log field (below), never to the evaluate() input.
     for t in targets:
         d = scope.evaluate(t)
         if not d.allowed:
@@ -325,6 +327,8 @@ def main():
         _block(audit, f"active tool {tool_name!r} but no target found in its "
                f"arguments (looked for: {', '.join(TARGET_KEYS)})", tool=tool_name)
 
+    # Decision runs on the FULL target; query strings are stripped only for the
+    # audit log field below, so a ?token=... never reaches the trail.
     for tgt in targets:
         d = scope.evaluate(tgt)
         if not d.allowed:
