@@ -69,6 +69,12 @@ def _now():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def _strip_query(target):
+    """Drop the query string and fragment from a target before it is logged, so
+    a token or secret carried in ``?...`` never reaches the audit trail."""
+    return str(target).split("?", 1)[0].split("#", 1)[0]
+
+
 def _audit_path(scope_path, project_dir):
     env = os.environ.get("IRICSTRIKE_AUDIT")
     if env:
@@ -80,12 +86,28 @@ def _audit_path(scope_path, project_dir):
     return None
 
 
+_AUDIT_CAP_BYTES = int(os.environ.get("IRICSTRIKE_AUDIT_CAP", 5_000_000))
+
+
+def _rotate(audit):
+    """Cap the audit log: when it exceeds the size cap, move it aside to
+    ``<name>.1`` (one generation kept). Bash gating adds warn/allow volume, so
+    an unbounded log would grow fast. Best-effort; never crashes the gate."""
+    try:
+        if _AUDIT_CAP_BYTES > 0 and audit.exists() \
+                and audit.stat().st_size > _AUDIT_CAP_BYTES:
+            os.replace(str(audit), str(audit) + ".1")
+    except OSError:
+        pass
+
+
 def _log(audit, record):
     record.setdefault("ts", _now())
     if not audit:
         return
     try:
         audit.parent.mkdir(parents=True, exist_ok=True)
+        _rotate(audit)
         with audit.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
     except OSError:
@@ -149,6 +171,104 @@ def _allow(audit, **a):
     sys.exit(EXIT_ALLOW)
 
 
+def _bash_warn(audit, reason, msg, **a):
+    _log(audit, {"event": "bash_warn", "reason": reason, **a})
+    print(f"IricStrike scope-guard: WARN -- {msg}", file=sys.stderr)
+    sys.exit(EXIT_ALLOW)
+
+
+def _handle_bash(tool_input, engine_ok, scope_path, audit):
+    """Scope-gate a Bash command: block-on-proof, fail-open-but-loud.
+
+    Deliberately asymmetric to the MCP active path (which fails CLOSED): the
+    Bash model is block-on-proof, so when we can't prove out-of-scope (no token,
+    no engagement, or an internal error) we WARN and allow rather than block the
+    operator's shell. We log the full target list and binaries, but never the
+    raw command, so session secrets (Authorization headers, keys) don't land in
+    the audit log.
+    """
+    command = tool_input.get("command") if isinstance(tool_input, dict) else ""
+    if not command or not command.strip():
+        sys.exit(EXIT_ALLOW)
+
+    try:
+        from scope_guard.bash_guard import assess
+        a = assess(command)
+    except Exception as e:  # fail-open but LOUD (Bash path only)
+        _log(audit, {"event": "bash_error", "fail": "open", "reason": str(e)})
+        print(f"IricStrike scope-guard: WARN -- bash guard error, allowing "
+              f"(fail-open): {e}", file=sys.stderr)
+        sys.exit(EXIT_ALLOW)
+
+    tier, binaries = a["tier"], a["binaries"]
+    if tier is None:
+        sys.exit(EXIT_ALLOW)  # off both lists: untouched, no warn, no log
+
+    if a["escape_hatch"]:
+        _log(audit, {"event": "bash_bypass", "reason": "escape-hatch",
+                     "tier": tier, "binaries": binaries,
+                     "targets": [_strip_query(t) for t in a["targets"]]})
+        print("IricStrike scope-guard: BYPASS -- '# scope-guard: allow' honored; "
+              "logged to audit", file=sys.stderr)
+        sys.exit(EXIT_ALLOW)
+
+    if tier == 2:
+        _bash_warn(audit, "tier2-warn",
+                   f"tier-2 tool {binaries} not scope-checked -- verify the "
+                   "target yourself", tier=2, binaries=binaries)
+
+    # tier 1 with no active engagement: nothing can be verified. Warn+allow by
+    # default (block-on-proof -- there is no proof), or hard-block when the
+    # operator opts into strict mode. Either way the entry records engagement:none.
+    if not engine_ok or not scope_path:
+        if os.environ.get("IRICSTRIKE_BASH_NO_ENGAGE") == "block":
+            _log(audit, {"event": "bash_deny", "reason": "no-engagement",
+                         "tier": 1, "binaries": binaries, "engagement": "none"})
+            print(f"IricStrike scope-guard: BLOCKED -- tier-1 tool {binaries} "
+                  "and no active engagement (strict mode); run /engage",
+                  file=sys.stderr)
+            sys.exit(EXIT_BLOCK)
+        _bash_warn(audit, "no-engagement",
+                   f"tier-1 tool {binaries}: NOTHING WAS VERIFIED -- no active "
+                   "engagement to scope-check against; allowing. Run /engage "
+                   "(or set IRICSTRIKE_BASH_NO_ENGAGE=block)",
+                   tier=1, binaries=binaries, engagement="none")
+
+    try:
+        from scope_guard import Scope
+        scope = Scope.load(scope_path)
+    except Exception as e:
+        _log(audit, {"event": "bash_error", "fail": "open",
+                     "reason": f"scope load: {e}"})
+        print(f"IricStrike scope-guard: WARN -- cannot load scope, allowing "
+              f"(fail-open): {e}", file=sys.stderr)
+        sys.exit(EXIT_ALLOW)
+
+    targets = a["targets"]
+    if not targets:
+        _bash_warn(audit, "no-token-warn",
+                   f"tier-1 tool {binaries} but no target found in the command "
+                   "-- allowing (block-on-proof)", tier=1, binaries=binaries)
+
+    # The scope decision runs on the FULL target; _strip_query is applied only
+    # when writing the log field (below), never to the evaluate() input.
+    for t in targets:
+        d = scope.evaluate(t)
+        if not d.allowed:
+            _log(audit, {"event": "bash_deny", "tier": 1, "binaries": binaries,
+                         "target": d.target, "reason": d.reason,
+                         "engagement": d.engagement})
+            print(f"IricStrike scope-guard: BLOCKED -- {d.reason} [{d.target}] "
+                  f"(bash tier-1 {binaries})", file=sys.stderr)
+            sys.exit(EXIT_BLOCK)
+
+    _log(audit, {"event": "bash_allow", "reason": "in-scope", "tier": 1,
+                 "binaries": binaries,
+                 "targets": [_strip_query(t) for t in targets],
+                 "engagement": scope.engagement})
+    sys.exit(EXIT_ALLOW)
+
+
 def main():
     raw = sys.stdin.read()
     try:
@@ -176,6 +296,12 @@ def main():
 
     audit = _audit_path(scope_path, project_dir)
 
+    # The Bash tool carries its command in tool_input, not its name, so the
+    # MCP-name active/passive test can't see it. Route it to the dedicated
+    # block-on-proof path (which always exits).
+    if (tool_name or "") == "Bash":
+        _handle_bash(tool_input, engine_ok, scope_path, audit)
+
     if not _is_active(tool_name):
         # Audit is per-engagement: only record passive calls while one is active,
         # so enabling the plugin globally doesn't log every tool call in every project.
@@ -201,13 +327,16 @@ def main():
         _block(audit, f"active tool {tool_name!r} but no target found in its "
                f"arguments (looked for: {', '.join(TARGET_KEYS)})", tool=tool_name)
 
+    # Decision runs on the FULL target; query strings are stripped only for the
+    # audit log field below, so a ?token=... never reaches the trail.
     for tgt in targets:
         d = scope.evaluate(tgt)
         if not d.allowed:
             _block(audit, f"{d.reason} [{d.target}]", tool=tool_name,
                    target=d.target, engagement=d.engagement)
 
-    _allow(audit, tool=tool_name, targets=targets, engagement=scope.engagement)
+    _allow(audit, tool=tool_name, targets=[_strip_query(t) for t in targets],
+           engagement=scope.engagement)
 
 
 if __name__ == "__main__":

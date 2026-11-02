@@ -1,0 +1,14 @@
+{
+  "//": "Template for the project-level MCP config. Copy to .mcp.json (gitignored) and edit the paths/URLs for your machine.",
+  "//scope-guard": "Do NOT add iricstrike-scope-guard here. The plugin registers it via .claude-plugin/plugin.json; a second registration in .mcp.json duplicates it and fails with CONNECTION_CLOSED (see commit 6e0d11d).",
+  "mcpServers": {
+    "hexstrike-ai": {
+      "command": "/path/to/hexstrike-ai/hexstrike-env/bin/python3",
+      "args": ["/path/to/hexstrike-ai/hexstrike_mcp.py", "--server", "http://127.0.0.1:8888"]
+    },
+    "burp": {
+      "type": "sse",
+      "url": "http://127.0.0.1:9876"
+    }
+  }
+}

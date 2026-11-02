@@ -11,3 +11,13 @@ evidence/
 
 # Active-engagement pointer + local audit log
 .iricstrike/
+
+# Local MCP config: machine-specific absolute paths. Copy .mcp.json.example to
+# .mcp.json and edit. Do NOT register iricstrike-scope-guard here — the plugin
+# declares it in .claude-plugin/plugin.json; a second entry duplicates it and
+# fails with CONNECTION_CLOSED (see commit 6e0d11d).
+/.mcp.json
+
+# Stray credential / loot dumps (AS-REP hashes, usernames, cracked creds)
+asrep.txt
+*.asrep
