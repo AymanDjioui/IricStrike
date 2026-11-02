@@ -195,5 +195,81 @@ class TestBashHook(unittest.TestCase):
         self.assertTrue(self.audit.exists())        # fresh current log
 
 
+class TestCidrHook(unittest.TestCase):
+    """CIDR range handling end-to-end through the hook, both paths (Phase 0b)."""
+
+    CIDR_SCOPE = (
+        "engagement:\n  name: t\n  type: bug-bounty\n"
+        "scope:\n"
+        "  in_scope: ['203.0.113.0/24']\n"
+        "  out_of_scope: ['203.0.113.200']\n"
+    )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.d = pathlib.Path(self._tmp.name)
+        self.audit = self.d / "audit.jsonl"
+        self.scope = self.d / "scope.yaml"
+        self.scope.write_text(self.CIDR_SCOPE, encoding="utf-8")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_event(self, event):
+        env = dict(os.environ)
+        for k in ("CLAUDE_PROJECT_DIR", "IRICSTRIKE_BASH_NO_ENGAGE",
+                  "IRICSTRIKE_AUDIT_CAP"):
+            env.pop(k, None)
+        env["IRICSTRIKE_AUDIT"] = str(self.audit)
+        env["IRICSTRIKE_SCOPE"] = str(self.scope)
+        return subprocess.run([sys.executable, str(HOOK)],
+                              input=json.dumps(event), text=True,
+                              capture_output=True, env=env)
+
+    def _bash(self, cmd):
+        return self._run_event({"tool_name": "Bash",
+                                "tool_input": {"command": cmd}})
+
+    def _mcp(self, target):
+        return self._run_event({"tool_name": "mcp__hexstrike-ai__nmap",
+                                "tool_input": {"target": target}})
+
+    def _events(self):
+        if not self.audit.exists():
+            return []
+        return [json.loads(l) for l in self.audit.read_text().splitlines() if l.strip()]
+
+    def _has_overlap_warn(self):
+        return any(e.get("reason") == "range-overlap"
+                   and "203.0.113.200" in e.get("overlaps", []) for e in self._events())
+
+    # -- Bash path --------------------------------------------------------
+    def test_bash_full_range_warns_and_allows(self):
+        p = self._bash("nmap 203.0.113.0/24")
+        self.assertEqual(p.returncode, 0)        # carved host must not block the /24
+        self.assertTrue(self._has_overlap_warn())
+        self.assertIn("WARN", p.stderr)
+
+    def test_bash_subrange_clean(self):
+        p = self._bash("nmap 203.0.113.0/25")
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(self._events()[-1]["reason"], "in-scope")
+
+    def test_bash_range_out_of_scope_blocks(self):
+        self.assertEqual(self._bash("nmap 198.51.100.0/24").returncode, 2)
+
+    def test_bash_exact_excluded_host_blocks(self):
+        self.assertEqual(self._bash("nmap 203.0.113.200/32").returncode, 2)
+
+    # -- MCP path ---------------------------------------------------------
+    def test_mcp_full_range_warns_and_allows(self):
+        p = self._mcp("203.0.113.0/24")
+        self.assertEqual(p.returncode, 0)
+        self.assertTrue(self._has_overlap_warn())
+
+    def test_mcp_range_out_of_scope_blocks(self):
+        self.assertEqual(self._mcp("198.51.100.0/24").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -63,6 +63,12 @@ Matching: hostnames match domain entries only; IPs match IP/CIDR entries only;
 they never cross-match. Wildcards are label-boundary safe
 (`*.example.com` never matches `evilexample.com`).
 
+A **CIDR target** is evaluated as a *range* (via `ipaddress` overlap, no host
+expansion): blocked only when the whole range is out of scope (no `in_scope`
+overlap, or entirely inside an exclusion); otherwise allowed, and if it overlaps
+an `out_of_scope` entry the decision carries `warn` + the overlapping entries so
+a carved-out `/32` never makes an in-scope `/24` unscannable.
+
 ## Environment
 
 | Var | Meaning |
@@ -79,7 +85,7 @@ they never cross-match. Wildcards are label-boundary safe
 cd scope-guard && PYTHONPATH=. python3 -m unittest discover -s tests
 ```
 
-102 tests: matcher primitives, the decision engine, the hook, and the Bash
+124 tests: matcher primitives, the decision engine, the hook, and the Bash
 gating (unit + subprocess with synthetic PreToolUse events).
 
 ## Bash command gating
@@ -118,6 +124,6 @@ string — the marker inside a URL or a quote is ignored.
 
 **Accepted limitations (documented):** a target in an ambient env var
 (`nmap $TARGET` without an inline assignment) or inside a request file
-(`sqlmap -r req.txt`) yields no token -> warn + allow. IPv6 literals/CIDRs are
-not extracted. (v4 CIDR range handling — overlap against exclusions — is
-addressed in Phase 0b; today a CIDR is checked on its network address.)
+(`sqlmap -r req.txt`) yields no token -> warn + allow. IPv6 literals are not
+extracted from Bash commands. (v4 CIDRs *are* range-checked once extracted — see
+the CIDR note under Matching above.)

@@ -58,7 +58,7 @@ Claude Code
 
 | Component | State |
 | :- | :- |
-| Scope-guard (engine, enforcement hook, Bash gating, MCP tool, audit log) | **done, 102 tests** |
+| Scope-guard (engine, enforcement hook, Bash gating, MCP tool, audit log) | **done, 124 tests** |
 | Plugin manifest + skeleton (commands, skill categories) | **done** |
 | Evidence pipeline (recon + PoC capture → confirm → embed, +PDF) | **done, 14 tests** |
 | Example skills (recon-methodology, web-enum, evidence-hygiene, report-writing) | **done** |

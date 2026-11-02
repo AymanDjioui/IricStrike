@@ -156,11 +156,13 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
   timeout and a negative cache** (amendment); on timeout the lookup is treated as
   unresolved (exclusion not strengthened — status quo), and failures are cached for the
   session so a dead resolver doesn't slow every call.
-- **B2b — v4 CIDR range handling (amendment).** Check a scanned CIDR with
-  `ipaddress.overlaps()` against each excluded network (no expansion): **block only when
-  the whole scanned range is out of scope**; when it partially overlaps an exclusion,
-  **warn and name the overlapping carved-out hosts**. Otherwise every carved-out /24 would
-  become unscannable. Applies to both the Bash tier-1 path and the MCP path.
+- **B2b — v4 CIDR range handling (amendment) — DONE (branch phase-0b-cidr-overlaps).**
+  `Scope._evaluate_cidr` checks a scanned CIDR with `ipaddress` overlap/containment (no
+  expansion): blocks only when the whole range is out of scope (no `in_scope` overlap, or
+  entirely inside an exclusion); otherwise allows, and on partial overlap returns
+  `Decision.warn` + `overlaps` naming the carved-out entries. Both the Bash tier-1 path
+  and the MCP path log a `range-overlap` warn and allow. Covered by `test_cidr.py` +
+  `TestCidrHook` (124 scope-guard tests green).
 
 ### New pre-0a / Phase-0 items (amendments)
 - **Fail-open-but-loud on the Bash path** — specified in D1; called out here because it is

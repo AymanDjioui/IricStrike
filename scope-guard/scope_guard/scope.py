@@ -18,6 +18,7 @@ Decision rules, in order:
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,11 @@ class Decision:
     reason: str
     engagement: str
     matched_entry: Optional[str] = None
+    # CIDR range scans: allowed may be True while warn is set, meaning the range
+    # is authorized but partly overlaps out_of_scope -- `overlaps` names those
+    # excluded entries so the operator can skip those hosts.
+    warn: bool = False
+    overlaps: tuple = ()
 
     def __bool__(self) -> bool:
         return self.allowed
@@ -54,6 +60,8 @@ class Decision:
             "reason": self.reason,
             "engagement": self.engagement,
             "matched_entry": self.matched_entry,
+            "warn": self.warn,
+            "overlaps": list(self.overlaps),
         }
 
 
@@ -150,6 +158,11 @@ class Scope:
 
     def evaluate(self, target: str, today: Optional[_dt.date] = None) -> Decision:
         today = today or _dt.date.today()
+        # A CIDR target is an address RANGE, not a single host -- detect it before
+        # normalize_target (which would strip the mask) and check range overlap.
+        net = _parse_cidr(str(target or "").strip())
+        if net is not None:
+            return self._evaluate_cidr(net, today)
         host = normalize_target(target)
         if not host:
             return Decision(False, str(target or "").strip(),
@@ -182,6 +195,93 @@ class Scope:
         # 5. fail-closed default.
         return Decision(False, host, "target not in scope (fail-closed default)",
                         self.engagement)
+
+    def _evaluate_cidr(self, net, today: _dt.date) -> Decision:
+        """Evaluate a CIDR *range* target against IP/CIDR scope entries.
+
+        Range-aware (no host expansion): uses ipaddress overlap/containment.
+        Block ONLY when the whole range is out of scope; a range that is
+        authorized but partly overlaps an exclusion is ALLOWED with warn=True
+        and the overlapping entries named, so a carved-out /32 never makes an
+        otherwise in-scope /24 unscannable. Hostname scope entries never match
+        an IP range (no DNS here) and are ignored.
+        """
+        target = str(net)
+        out_nets = [(e, n) for e in self.out_of_scope
+                    for n in (_entry_network(e),)
+                    if n is not None and n.version == net.version]
+        out_hits = [e for (e, n) in out_nets if n.overlaps(net)]
+        fully_excluded = any(net.subnet_of(n) for (e, n) in out_nets)
+
+        if self.is_permissive:
+            if fully_excluded:
+                return Decision(False, target,
+                                "CIDR range entirely within an out_of_scope entry",
+                                self.engagement)
+            if out_hits:
+                return Decision(True, target,
+                                f"{self.type} permissive; range overlaps out_of_scope "
+                                f"{out_hits} -- skip those hosts",
+                                self.engagement, warn=True, overlaps=tuple(out_hits))
+            return Decision(True, target,
+                            f"{self.type} permissive (range not excluded)",
+                            self.engagement)
+
+        # strict: date window, then range must be at least partly authorized.
+        if not self._within_window(today):
+            return Decision(False, target,
+                            f"outside engagement window ({self.start} .. {self.end})",
+                            self.engagement)
+        in_nets = [(e, n) for e in self.in_scope
+                   for n in (_entry_network(e),)
+                   if n is not None and n.version == net.version]
+        if not any(n.overlaps(net) for (e, n) in in_nets):
+            return Decision(False, target,
+                            "whole range out of scope (no in_scope overlap)",
+                            self.engagement)
+        if fully_excluded:
+            return Decision(False, target,
+                            "range entirely within an out_of_scope entry",
+                            self.engagement)
+        if out_hits:
+            return Decision(True, target,
+                            f"range overlaps out_of_scope {out_hits} -- those hosts "
+                            "are out of scope, skip them",
+                            self.engagement, warn=True, overlaps=tuple(out_hits))
+        return Decision(True, target, "range within in_scope",
+                        self.engagement, matched_entry=in_nets[0][0])
+
+
+def _entry_network(entry):
+    """Parse a scope entry to an ip_network, or None if it is not IP/CIDR."""
+    entry = str(entry).strip()
+    try:
+        if "/" in entry:
+            return ipaddress.ip_network(entry, strict=False)
+        ip = ipaddress.ip_address(entry)
+        return ipaddress.ip_network(
+            f"{entry}/{32 if ip.version == 4 else 128}", strict=False)
+    except ValueError:
+        return None
+
+
+def _parse_cidr(raw):
+    """Return an ip_network if ``raw`` is a CIDR (bare IP base + mask), else None.
+
+    A URL (``https://host/path``) has a non-IP base before the first '/', so it
+    is never mistaken for a CIDR.
+    """
+    if "/" not in raw:
+        return None
+    base = raw.split("/", 1)[0]
+    try:
+        ipaddress.ip_address(base)
+    except ValueError:
+        return None
+    try:
+        return ipaddress.ip_network(raw, strict=False)
+    except ValueError:
+        return None
 
 
 def _as_str_list(val) -> list:
