@@ -252,6 +252,7 @@ def _handle_bash(tool_input, engine_ok, scope_path, audit):
 
     # The scope decision runs on the FULL target; _strip_query is applied only
     # when writing the log field (below), never to the evaluate() input.
+    warned = False
     for t in targets:
         d = scope.evaluate(t)
         if not d.allowed:
@@ -261,8 +262,18 @@ def _handle_bash(tool_input, engine_ok, scope_path, audit):
             print(f"IricStrike scope-guard: BLOCKED -- {d.reason} [{d.target}] "
                   f"(bash tier-1 {binaries})", file=sys.stderr)
             sys.exit(EXIT_BLOCK)
+        if d.warn:  # CIDR range authorized but overlaps an exclusion
+            warned = True
+            _log(audit, {"event": "bash_warn", "reason": "range-overlap",
+                         "tier": 1, "binaries": binaries, "target": d.target,
+                         "overlaps": list(d.overlaps),
+                         "engagement": scope.engagement})
+            print(f"IricStrike scope-guard: WARN -- scanned range {d.target} "
+                  f"overlaps out-of-scope {list(d.overlaps)}; skip those hosts",
+                  file=sys.stderr)
 
-    _log(audit, {"event": "bash_allow", "reason": "in-scope", "tier": 1,
+    _log(audit, {"event": "bash_allow",
+                 "reason": "range-overlap" if warned else "in-scope", "tier": 1,
                  "binaries": binaries,
                  "targets": [_strip_query(t) for t in targets],
                  "engagement": scope.engagement})
@@ -334,6 +345,13 @@ def main():
         if not d.allowed:
             _block(audit, f"{d.reason} [{d.target}]", tool=tool_name,
                    target=d.target, engagement=d.engagement)
+        if d.warn:  # CIDR range authorized but overlaps an exclusion
+            _log(audit, {"event": "warn", "reason": "range-overlap",
+                         "tool": tool_name, "target": d.target,
+                         "overlaps": list(d.overlaps), "engagement": d.engagement})
+            print(f"IricStrike scope-guard: WARN -- scanned range {d.target} "
+                  f"overlaps out-of-scope {list(d.overlaps)}; skip those hosts",
+                  file=sys.stderr)
 
     _allow(audit, tool=tool_name, targets=[_strip_query(t) for t in targets],
            engagement=scope.engagement)
