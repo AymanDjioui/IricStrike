@@ -115,5 +115,40 @@ class TestExamplesLoad(unittest.TestCase):
         self.assertFalse(s.evaluate("10.10.14.50"))
 
 
+class TestWildcardApexMessage(unittest.TestCase):
+    """FP2: a bare apex blocked under a wildcard-only scope names the exact host."""
+
+    def _s(self, in_scope, out=()):
+        return Scope.from_dict({
+            "engagement": {"name": "t", "type": "bug-bounty"},
+            "scope": {"in_scope": list(in_scope), "out_of_scope": list(out)},
+        })
+
+    def test_fires_on_bare_apex_vs_wildcard_only(self):
+        d = self._s(["*.acme.example"]).evaluate("acme.example")
+        self.assertFalse(d.allowed)
+        self.assertIn("wildcard doesn't match the apex", d.reason)
+
+    def test_message_contains_literal_host_and_wildcard(self):
+        d = self._s(["*.acme.example"]).evaluate("acme.example")
+        self.assertIn("acme.example", d.reason)
+        self.assertIn("*.acme.example", d.reason)
+
+    def test_silent_when_apex_already_in_scope(self):
+        d = self._s(["*.acme.example", "acme.example"]).evaluate("acme.example")
+        self.assertTrue(d.allowed)
+        self.assertNotIn("wildcard doesn't match", d.reason)
+
+    def test_silent_when_apex_explicitly_out_of_scope(self):
+        d = self._s(["*.acme.example"], ["acme.example"]).evaluate("acme.example")
+        self.assertFalse(d.allowed)
+        self.assertNotIn("wildcard doesn't match", d.reason)
+        self.assertIn("out_of_scope", d.reason)
+
+    def test_subdomain_still_allowed_no_message(self):
+        d = self._s(["*.acme.example"]).evaluate("api.acme.example")
+        self.assertTrue(d.allowed)
+
+
 if __name__ == "__main__":
     unittest.main()

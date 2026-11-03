@@ -150,8 +150,13 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
   `execute_command`, `install_python_package`, `generate_payload`, CVE-feed) deliberately
   excluded and stay gated. One assertion per exempted tool + network-tool counter-tests.
   Expect follow-up tuning (as the Burp allowlist needed).
-- **FP2** — `/engage` offers the apex when given a wildcard; the block message hints
-  `acme.example not covered by *.acme.example`.
+- **FP2 — DONE** (branch phase-0b). Block message (engine, tested): a bare apex blocked
+  under a wildcard-only scope names the literal host + why + fix ("acme.example not
+  covered by *.acme.example (wildcard doesn't match the apex) -- add it to scope.yaml
+  in_scope or target a specific subdomain"); silent when the apex is already in scope or
+  explicitly out_of_scope. `/engage` offer (engage.md prose, reviewed not tested): when a
+  wildcard is given and the apex is in neither list, ask once (explicit yes/no) before
+  adding it — never silently.
 - **FP3** — audit the real HexStrike/Burp tool arg schemas against `TARGET_KEYS`; reuse
   `capture.py:_target_from_request` to pull `Host` from raw-request fields.
 - **B3** — recon pipeline passes `-dr` / `-fhr` to nuclei (never bare `-fr`), closing the

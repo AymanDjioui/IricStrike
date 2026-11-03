@@ -154,6 +154,14 @@ class TestHook(unittest.TestCase):
 
     # --- via project pointer file (what /engage writes) ---
 
+    def test_bare_apex_block_message_names_host(self):
+        # FP2: scanning the apex under wildcard-only scope -> explicit message
+        p = self._run({"tool_name": "mcp__hexstrike-ai__nmap",
+                       "tool_input": {"target": "acme.example"}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("acme.example", p.stderr)
+        self.assertIn("wildcard doesn't match the apex", p.stderr)
+
     def test_active_via_pointer_file(self):
         (self.d / ".iricstrike").mkdir()
         (self.d / ".iricstrike" / "active-scope").write_text(str(self.scope))

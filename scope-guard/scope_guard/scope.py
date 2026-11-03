@@ -192,7 +192,18 @@ class Scope:
                                 f"target matches in_scope entry {entry!r}",
                                 self.engagement, entry)
 
-        # 5. fail-closed default.
+        # 5. fail-closed default. If the target is the bare apex of a wildcard-only
+        # scope, name the exact uncovered host and the fix (the wildcard-apex
+        # footgun) instead of the generic message. Reaching here means the apex is
+        # not in in_scope (the loop missed) and not in out_of_scope (step 2 would
+        # have returned), so this fires only when the apex is genuinely uncovered.
+        wildcard = _apex_wildcard(host, self.in_scope)
+        if wildcard:
+            return Decision(
+                False, host,
+                f"{host} not covered by {wildcard} (wildcard doesn't match the "
+                "apex) -- add it to scope.yaml in_scope or target a specific subdomain",
+                self.engagement)
         return Decision(False, host, "target not in scope (fail-closed default)",
                         self.engagement)
 
@@ -263,6 +274,16 @@ def _entry_network(entry):
             f"{entry}/{32 if ip.version == 4 else 128}", strict=False)
     except ValueError:
         return None
+
+
+def _apex_wildcard(host, in_scope):
+    """Return the wildcard entry whose apex is ``host`` (e.g. 'acme.example' ->
+    '*.acme.example'), or None. Used only to explain a fail-closed apex block."""
+    for entry in in_scope:
+        e = entry.strip().rstrip(".").lower()
+        if e.startswith("*.") and e[2:] == host:
+            return entry
+    return None
 
 
 def _parse_cidr(raw):
