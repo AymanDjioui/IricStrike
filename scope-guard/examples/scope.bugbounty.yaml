@@ -17,3 +17,18 @@ scope:
     - "blog.acme.example"   # excluded even though *.acme.example covers it
     - "careers.acme.example"
     - "203.0.113.200"       # one carved-out host inside the CIDR
+
+# Optional: two authenticated identities for access-control / IDOR testing (the
+# Phase-0.5 session slice). PLACEHOLDERS ONLY in this tracked example -- a real
+# session cookie is a secret and belongs ONLY in an engagement scope.yaml under
+# engagements/ or .iricstrike/ (both gitignored), never in a tracked file.
+# Exactly two identities, named a and b.
+identity:
+  a:
+    label: "owner account"
+    cookie: "<session cookie for account A -- set this in your engagement scope.yaml>"
+  b:
+    label: "second account"
+    cookie: "<session cookie for account B>"
+    headers:
+      X-Example-Auth: "<optional extra auth header value>"

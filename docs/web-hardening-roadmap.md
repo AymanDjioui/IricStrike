@@ -244,11 +244,17 @@ Status / order (redaction lands FIRST, before anything stores or prints a sessio
   **redact → normalize → diff** (never diff first). Owns VARIANCE not secrecy; treats
   `SAFE_COOKIES` as noise regardless of secrecy. `NOISE_CLASSES` names volatile-cookies /
   csrf-token / timestamps / request-id / response-ordering (last named-only); crude stub.
-- TODO: identity block schema + loader; reserved `identity` arg (a|b, never inferred);
-  audit `identity` field (empty allowed) from day one; curl **GET-only** replay that
-  references the identity by name and never echoes the cookie; missing-identity preflight
-  error; diff-normalizer stub (names noise classes only); confirm gitignore covers the
-  identity-bearing scope.yaml.
+- **Identity block + loader + preflight — DONE.** New `session-slice/` package (separate
+  from the frozen guard): `identity: {a, b}` block in scope.yaml (placeholder example in
+  `scope-guard/examples/scope.bugbounty.yaml`), `load_identities` (names restricted to
+  a/b), `require_identity` missing-identity preflight with a clear error, and an
+  `Identity` whose `repr` never echoes the cookie/header values. Confirmed
+  `engagements/*/scope.yaml` and `.iricstrike/scope.yaml` are gitignored (real secrets
+  never committed); `/engage` guardrail refuses an identity block on a non-ignored path.
+  Added to CI.
+- TODO: reserved `identity` arg (a|b, never inferred); audit `identity` field (empty
+  allowed) from day one; curl **GET-only** replay that references the identity by name
+  and never echoes the cookie (redact→normalize→diff).
 
 ## Phase 1 — web capability
 - Recon-depth stages wired as **scope-gated** paths: `gau`/`waybackurls` (historical URLs),
