@@ -59,7 +59,7 @@ These look tempting but must never be treated as targets:
 - **payloads** — `payload`, `payloads`, `custom_payload`, `payload_type`
 - **headers / cookies** — `headers`, `cookie`, `cookies`
 - **credentials** — `password`, `username`, `passphrase`, `api_key`, `jwt_token`, `hash_value`
-- **ports** (scope is host-based, not port-based) — `port`, `ports`, `target_port`, `proxy_port`
+- **ports** (scope is host-based, not port-based) — `port`, `ports`, `target_port`, `proxy_port`. Consequence: a **port-qualified scope entry** such as `acme.example:8080` will **not** match anything — the target is normalized to its bare host and entries are compared host-only, so write the bare host in `scope.yaml` (ports are never evaluated).
 - **templates** — `template`, `template_type`
 - **names / labels** — `target_software`, `tool_name`, `module`, `project_name`, `session_name`, `service`, `services`
 - **Burp scope config** — `scope`, `out_of_scope` (set Burp's scope; they do not themselves touch a host — see "open items")

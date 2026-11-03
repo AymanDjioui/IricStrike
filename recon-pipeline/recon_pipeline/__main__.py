@@ -30,6 +30,9 @@ def main(argv=None):
     ap.add_argument("--root", required=True)
     ap.add_argument("--scope")
     ap.add_argument("--nuclei", action="store_true")
+    ap.add_argument("--nuclei-arg", action="append", default=[],
+                    help="extra nuclei flag, repeatable. Default redirect handling is "
+                         "-fhr (same-host); pass your own -fr/-fhr/-dr and it is honored.")
     ap.add_argument("--out")
     ap.add_argument("--json")
     args = ap.parse_args(argv)
@@ -42,7 +45,8 @@ def main(argv=None):
         sys.exit("no active engagement scope (use --scope, set IRICSTRIKE_SCOPE, or /engage)")
     scope = Scope.load(path)
 
-    result = run_recon(args.root, scope, do_nuclei=args.nuclei)
+    result = run_recon(args.root, scope, do_nuclei=args.nuclei,
+                       nuclei_args=args.nuclei_arg)
     md = build_markdown(result)
     if args.out:
         Path(args.out).write_text(md, encoding="utf-8")

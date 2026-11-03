@@ -55,6 +55,9 @@ TARGET_KEYS = (
     "endpoint", "graphql_endpoint", "schema_url",
     "ip", "ip_address", "rhost", "rhosts",
 )
+# endpoint vs endpoints: `endpoint` (singular; graphql_scanner) is a target URL, so
+# it is a key. `endpoints` (plural; api_fuzzer) is a comma-list of PATHS appended to
+# base_url -- not hosts -- so it is deliberately NOT a key.
 # Args holding a RAW HTTP request. The host comes from the request LINE only (never
 # the body), after base64-decoding. Burp senders normally carry targetHostname too
 # (used first); this is the fallback when a raw request has no explicit host arg.

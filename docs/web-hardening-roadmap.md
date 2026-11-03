@@ -167,8 +167,12 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
   blocked. `REQUEST_KEYS` raw-request fallback takes the host from the request LINE
   (base64-decoded), never the body. Ambiguity stays fail-closed on MCP / warn on Bash.
   Regression test pins the non-target args. (Did NOT expand the passive list.)
-- **B3** — recon pipeline passes `-dr` / `-fhr` to nuclei (never bare `-fr`), closing the
-  redirect-escapes-scope leak.
+- **B3 — DONE** (branch phase-0b). nuclei's default redirect handling is now `-fhr`
+  (follow same-host only — keeps in-scope coverage, can't walk off-scope); **never bare
+  `-fr`**; `-dr` stays opt-in (it loses coverage). If the operator passes their own
+  redirect flag (`-fr`/`-fhr`/`-dr`, long forms too) it is honored and no default added
+  (warned). Plumbed through `run_recon(nuclei_args=…)` and a repeatable `--nuclei-arg`.
+  Pure `_nuclei_cmd` builder tested for all three flags incl. deliberate `-fr`.
 - **B2** (optional) — resolve-and-recheck for `out_of_scope` **IP** entries so an excluded
   IP cannot be reached by a hostname that resolves to it. **Needs a short resolver
   timeout and a negative cache** (amendment); on timeout the lookup is treated as
