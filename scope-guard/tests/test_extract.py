@@ -91,6 +91,22 @@ class TestRawRequest(unittest.TestCase):
     def test_no_target_and_unparsable_request_empty(self):
         self.assertEqual(_extract_targets({"content": "not a request"}), [])
 
+    def test_html_body_in_content_falls_through(self):
+        # an HTML body is not a request: must fall through to [] (never crash/block),
+        # and must not misparse an embedded request-looking line as a host
+        html = ("<!DOCTYPE html>\n<html><body>"
+                "<pre>GET http://evil.example/ HTTP/1.1</pre>"
+                "<p>Host: evil.example</p></body></html>")
+        self.assertEqual(_extract_targets({"content": html}), [])
+
+
+class TestLength(unittest.TestCase):
+    def test_host_at_max_dns_length_not_skipped(self):
+        host = "a" * 245 + ".example"   # 253 chars == max DNS name; must survive
+        self.assertEqual(len(host), 253)
+        self.assertEqual(_extract_targets({"url": host}), [host])
+        self.assertGreaterEqual(_MAX_HOST_LEN, 253)
+
 
 if __name__ == "__main__":
     unittest.main()

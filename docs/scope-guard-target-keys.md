@@ -69,7 +69,7 @@ These look tempting but must never be treated as targets:
 
 - `endpoints` (api_fuzzer) — a comma-list of **paths** appended to `base_url`, not hosts.
 - `source_code_url` (research_zero_day_opportunities) — a third-party source-repo URL
-  (often GitHub), not the engagement target; gating it would false-block legitimate
+  (often a public code host), not the engagement target; gating it would false-block legitimate
   repo analysis. The tool's `target_software` is a software *name*, not a host.
 - `single_target` — could not be confirmed as a top-level tool arg in this build; not
   added without evidence (no guessing).

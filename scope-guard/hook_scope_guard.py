@@ -63,7 +63,10 @@ TARGET_KEYS = (
 # (used first); this is the fallback when a raw request has no explicit host arg.
 REQUEST_KEYS = ("content", "request", "raw_request", "raw", "http_request")
 _MAX_DEPTH = 6          # cap recursion into nested args
-_MAX_HOST_LEN = 2048    # a value longer than this is not a host/URL -- don't treat as one
+# Values longer than this are not a host/URL and are skipped. MUST stay >= 253
+# (the max DNS name length) or a long-but-valid hostname would be dropped silently;
+# 2048 also comfortably admits long URLs while rejecting a dumped body/blob.
+_MAX_HOST_LEN = 2048
 
 # Read-only / local-transform / config Burp MCP tools. They send NO traffic to a
 # target host (in Burp's MCP, only the HttpServiceParams senders above reach the
@@ -281,9 +284,14 @@ def _extract_targets(tool_input):
             out.append(t)
     if out:
         return out
-    # fallback: no explicit host key -> host from a raw request's request line
+    # fallback: no explicit host key -> host from a raw request's request line.
+    # Best-effort: if a REQUEST_KEYS value is not a parseable request (e.g. an HTML
+    # body), parsing yields nothing and we fall through -- it never raises/blocks.
     for req in requests:
-        h = _host_from_request(req)
+        try:
+            h = _host_from_request(req)
+        except Exception:
+            h = None
         if h:
             return [h]
     return []
