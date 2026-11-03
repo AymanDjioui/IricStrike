@@ -194,11 +194,13 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
 ### New pre-0a / Phase-0 items (amendments)
 - **Fail-open-but-loud on the Bash path** — specified in D1; called out here because it is
   a correctness requirement, not a nicety.
-- **Burp MCP preflight + documented start step.** The evidence-pipeline PoC path depends
-  on Burp, and Burp MCP is **dead right now** (`ECONNREFUSED` on `127.0.0.1:9876` during
-  the audit). Add: (a) a preflight that pings the endpoint and warns clearly if down,
-  surfaced from `/triage` / `/report`; (b) an explicit "start Burp, enable the MCP server
-  on 9876" step in the install docs.
+- **Burp MCP preflight + documented start step — DONE** (branch phase-0b).
+  `evidence_pipeline.burp_preflight.check_burp` TCP-checks `127.0.0.1:9876`; the
+  `python3 -m evidence_pipeline burp-preflight` CLI **warns, never hard-fails** (exits 0,
+  needs no engagement), so a machine without Burp is unaffected. Surfaced from `/triage`
+  (before Burp capture) and `/report`; the README install step says to start Burp and
+  enable its MCP on 9876. Injectable connector → tested without a real socket; a CLI test
+  confirms warn + exit 0.
 - **Audit-log cap or rotation.** Logging tier-1 decisions + tier-2 warns + bypasses will
   grow `audit.jsonl` fast; cap size and rotate (e.g. `audit.jsonl` → `audit.jsonl.1`).
 - **`scope.yaml` secrecy.** `engagements/` and `.iricstrike/` are **already fully

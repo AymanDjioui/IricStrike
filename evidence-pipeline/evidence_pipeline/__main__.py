@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from evidence_pipeline import (Pipeline, capture_poc, capture_recon, ScopeRefused,
                                build_markdown, render_pdf)
+from evidence_pipeline.burp_preflight import check_burp, preflight_message
 
 try:
     from scope_guard import Scope, resolve_scope_path
@@ -81,7 +82,21 @@ def main(argv=None):
     p.add_argument("--out")
     p.add_argument("--pdf", action="store_true")
 
+    p = sub.add_parser("burp-preflight")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=9876)
+    p.add_argument("--timeout", type=float, default=1.0)
+
     args = ap.parse_args(argv)
+
+    # Connectivity check only -- no engagement required, and it NEVER hard-fails
+    # (warn and exit 0) so a machine without Burp is unaffected.
+    if args.cmd == "burp-preflight":
+        up = check_burp(args.host, args.port, args.timeout)
+        msg = preflight_message(up, args.host, args.port)
+        print(msg) if up else print(msg, file=sys.stderr)
+        return
+
     scope, scope_path = _load_scope(args)
     pipe = Pipeline(_evidence_dir(args, scope_path))
 

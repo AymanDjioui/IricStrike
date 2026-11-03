@@ -95,6 +95,11 @@ IricStrike calls these as dependencies; it does not bundle them.
 - **HexStrike AI** (MIT) — network/infra + web tools. Run its server and add it to
   your MCP config, e.g. `mcp__hexstrike-ai__*`.
 - **Burp Suite MCP** (GPL-3.0) — web proxy work and request/response PoC evidence.
+  Start Burp and enable its MCP server (Burp Suite → Extensions → MCP, listening on
+  `127.0.0.1:9876`), then add it to your MCP config. Check it with
+  `python3 -m evidence_pipeline burp-preflight` — this only **warns** if Burp is down
+  (recon, scanning and report assembly work without it; only request/response PoC
+  capture needs Burp).
 
 Because the Burp servers are **GPL-3.0**, IricStrike references them as
 separate-process MCP dependencies only — their code is never vendored into this
