@@ -67,5 +67,39 @@ class TestCidrPermissive(unittest.TestCase):
         self.assertIn("10.10.14.0/23", d.overlaps)
 
 
+class TestCidrGuards(unittest.TestCase):
+    """The two parsing guards: host-bits (strict=False) and mixed address family."""
+
+    def _scope(self, in_scope, out_of_scope=()):
+        return Scope.from_dict({
+            "engagement": {"name": "t", "type": "bug-bounty"},
+            "scope": {"in_scope": list(in_scope), "out_of_scope": list(out_of_scope)},
+        })
+
+    def test_host_bits_in_target_not_a_false_block(self):
+        # '10.0.0.5/24' has host bits set; strict=False must accept it (and treat
+        # it as 10.0.0.0/24) rather than raise -> on MCP that would be a false block.
+        d = self._scope(["10.0.0.0/24"]).evaluate("10.0.0.5/24")
+        self.assertTrue(d.allowed)
+
+    def test_host_bits_in_scope_entry_not_a_crash(self):
+        d = self._scope(["10.0.0.5/24"]).evaluate("10.0.0.0/24")
+        self.assertTrue(d.allowed)
+
+    def test_mixed_address_family_no_typeerror(self):
+        # v6 scope entries must be skipped for a v4 target: overlaps() raises
+        # TypeError across families, so we compare by version only.
+        s = self._scope(["203.0.113.0/24", "2001:db8::/32"], ["2001:db8:dead::/48"])
+        d = s.evaluate("203.0.113.0/24")   # must not raise
+        self.assertTrue(d.allowed)
+        self.assertFalse(d.warn)           # the v6 exclusion is ignored for a v4 range
+
+    def test_v6_target_against_v6_scope_works(self):
+        s = self._scope(["2001:db8::/32"], ["2001:db8:dead::/48"])
+        d = s.evaluate("2001:db8::/32")
+        self.assertTrue(d.allowed)
+        self.assertTrue(d.warn)            # overlaps the v6 exclusion
+
+
 if __name__ == "__main__":
     unittest.main()
