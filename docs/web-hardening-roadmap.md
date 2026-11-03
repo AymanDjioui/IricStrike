@@ -173,11 +173,16 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
   redirect flag (`-fr`/`-fhr`/`-dr`, long forms too) it is honored and no default added
   (warned). Plumbed through `run_recon(nuclei_args=…)` and a repeatable `--nuclei-arg`.
   Pure `_nuclei_cmd` builder tested for all three flags incl. deliberate `-fr`.
-- **B2** (optional) — resolve-and-recheck for `out_of_scope` **IP** entries so an excluded
-  IP cannot be reached by a hostname that resolves to it. **Needs a short resolver
-  timeout and a negative cache** (amendment); on timeout the lookup is treated as
-  unresolved (exclusion not strengthened — status quo), and failures are cached for the
-  session so a dead resolver doesn't slow every call.
+- **B2 — DONE** (branch phase-0b). `Scope.evaluate(resolver=…)` rechecks an otherwise-
+  allowed hostname: if it resolves into an `out_of_scope` IP/CIDR it is blocked (reason
+  names host → IP → entry). A `netresolve.Resolver` does the lookup with a ~2s hard
+  timeout (threaded), positive + negative caches with TTL, and fail-open on any error.
+  **DNS failure is never out-of-scope evidence** — timeout/error keeps the allow. Only
+  runs when the scope has `out_of_scope` IP entries and the target is a hostname (no-op
+  otherwise), so the common case does zero DNS. Wired into the hook (both paths),
+  default-on, disable with `IRICSTRIKE_DNS_RECHECK=0`. Engine stays pure/I-O-free by
+  default (resolver injected); tested with a fake resolver + resolver cache/TTL/fail-open
+  tests.
 - **B2b — v4 CIDR range handling (amendment) — DONE (branch phase-0b-cidr-overlaps).**
   `Scope._evaluate_cidr` checks a scanned CIDR with `ipaddress` overlap/containment (no
   expansion): blocks only when the whole range is out of scope (no `in_scope` overlap, or

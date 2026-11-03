@@ -122,6 +122,25 @@ def _strip_query(target):
     return str(target).split("?", 1)[0].split("#", 1)[0]
 
 
+_RESOLVER_CACHE = {}
+
+
+def _resolver():
+    """Shared DNS resolver for the out_of_scope IP recheck (B2), or None when
+    disabled. The engine only resolves when the scope has out_of_scope IP
+    entries and the target is an otherwise-allowed hostname, so this is a no-op
+    for the common case. Set IRICSTRIKE_DNS_RECHECK=0 to turn it off."""
+    if os.environ.get("IRICSTRIKE_DNS_RECHECK", "1") == "0":
+        return None
+    if "r" not in _RESOLVER_CACHE:
+        try:
+            from scope_guard.netresolve import Resolver
+            _RESOLVER_CACHE["r"] = Resolver()
+        except Exception:
+            _RESOLVER_CACHE["r"] = None
+    return _RESOLVER_CACHE["r"]
+
+
 def _audit_path(scope_path, project_dir):
     env = os.environ.get("IRICSTRIKE_AUDIT")
     if env:
@@ -364,7 +383,7 @@ def _handle_bash(tool_input, engine_ok, scope_path, audit):
     # when writing the log field (below), never to the evaluate() input.
     warned = False
     for t in targets:
-        d = scope.evaluate(t)
+        d = scope.evaluate(t, resolver=_resolver())
         if not d.allowed:
             _log(audit, {"event": "bash_deny", "tier": 1, "binaries": binaries,
                          "target": d.target, "reason": d.reason,
@@ -451,7 +470,7 @@ def main():
     # Decision runs on the FULL target; query strings are stripped only for the
     # audit log field below, so a ?token=... never reaches the trail.
     for tgt in targets:
-        d = scope.evaluate(tgt)
+        d = scope.evaluate(tgt, resolver=_resolver())
         if not d.allowed:
             _block(audit, f"{d.reason} [{d.target}]", tool=tool_name,
                    target=d.target, engagement=d.engagement)

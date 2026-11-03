@@ -25,7 +25,7 @@ from typing import Optional
 
 import yaml
 
-from .matcher import normalize_target, target_matches_entry
+from .matcher import is_ip, normalize_target, target_matches_entry
 
 PERMISSIVE_TYPES = {"ctf", "lab", "training"}
 STRICT_TYPES = {"bug-bounty", "bugbounty", "pentest", "self-owned", "infrastructure"}
@@ -156,7 +156,52 @@ class Scope:
             return False
         return True
 
-    def evaluate(self, target: str, today: Optional[_dt.date] = None) -> Decision:
+    def evaluate(self, target: str, today: Optional[_dt.date] = None,
+                 resolver=None) -> Decision:
+        """Evaluate a target. With a ``resolver`` (B2), an otherwise-allowed
+        hostname is rechecked: if it resolves to an out_of_scope IP it is blocked.
+        A DNS failure is never out-of-scope evidence -- on timeout/error the
+        allow stands (fail open)."""
+        d = self._evaluate_core(target, today)
+        if d.allowed and resolver is not None:
+            host = d.target
+            if host and "/" not in host and not is_ip(host):
+                blocked = self._dns_oos_recheck(host, resolver)
+                if blocked is not None:
+                    return blocked
+        return d
+
+    def _oos_ip_nets(self):
+        nets = getattr(self, "_oos_nets_cache", None)
+        if nets is None:
+            nets = [(e, n) for e in self.out_of_scope
+                    for n in (_entry_network(e),) if n is not None]
+            self._oos_nets_cache = nets
+        return nets
+
+    def _dns_oos_recheck(self, host, resolver):
+        """Return a block Decision if ``host`` resolves into an out_of_scope IP
+        entry, else None. Only out_of_scope IP/CIDR entries matter here."""
+        oos_nets = self._oos_ip_nets()
+        if not oos_nets:
+            return None
+        ips = resolver.resolve(host)
+        if not ips:                      # DNS failure/timeout -> NOT evidence
+            return None
+        for ip in ips:
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            for entry, net in oos_nets:
+                if addr.version == net.version and addr in net:
+                    return Decision(
+                        False, host,
+                        f"{host} resolves to {ip}, which is in out_of_scope {entry!r}",
+                        self.engagement, matched_entry=entry)
+        return None
+
+    def _evaluate_core(self, target: str, today: Optional[_dt.date] = None) -> Decision:
         today = today or _dt.date.today()
         # A CIDR target is an address RANGE, not a single host -- detect it before
         # normalize_target (which would strip the mask) and check range overlap.
