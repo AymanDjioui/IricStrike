@@ -25,4 +25,4 @@ jobs:
       - name: evidence-pipeline
         run: cd evidence-pipeline && PYTHONPATH=".:../scope-guard" python3 -m unittest discover -s tests
       - name: session-slice
-        run: cd session-slice && PYTHONPATH=. python3 -m unittest discover -s tests
+        run: cd session-slice && PYTHONPATH=".:../evidence-pipeline" python3 -m unittest discover -s tests
