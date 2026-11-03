@@ -10,7 +10,9 @@ scope.yaml directly. Session material is never echoed (see identity.Identity).
 from .identity import (IDENTITY_NAMES, Identity, IdentityError,
                        load_identities, load_identities_from_file,
                        require_identity)
+from .replay import ReplayError, build_curl, replay_get
 
 __all__ = ["IDENTITY_NAMES", "Identity", "IdentityError", "load_identities",
-           "load_identities_from_file", "require_identity"]
+           "load_identities_from_file", "require_identity",
+           "ReplayError", "build_curl", "replay_get"]
 __version__ = "0.1.0"

@@ -259,8 +259,14 @@ Status / order (redaction lands FIRST, before anything stores or prints a sessio
   Annotation for the writeup only: NOT a `TARGET_KEY`, never a decision input (an
   out-of-scope target still blocks, an in-scope one still allows, with the annotation
   set). The 176 existing scope-guard tests were unchanged; +5 new.
-- TODO: reserved `identity` arg (a|b, never inferred); curl **GET-only** replay that
-  references the identity by name and never echoes the cookie (redact→normalize→diff).
+- **Reserved identity arg + curl GET-only replay — DONE.** `session_slice.replay_get(url,
+  identity_name, …)`: identity is explicit via `require_identity` (never inferred); curl
+  is GET-only, no `-L` (redirects not followed), no `-v`, `--max-time` bounded, sends ONLY
+  that identity's cookie+headers (no ambient merge); target scope-checked first (frozen
+  engine, read-only). Response (headers+body) is run redact→normalize before return, so
+  the raw cookie never comes back — tested as the no-leak invariant.
+- Interface slice is now shaped end to end. Capstone remaining (thin): a two-identity diff
+  that replays `a` and `b` and diffs the normalized outputs.
 
 ## Phase 1 — web capability
 - Recon-depth stages wired as **scope-gated** paths: `gau`/`waybackurls` (historical URLs),
