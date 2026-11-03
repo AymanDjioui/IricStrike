@@ -140,11 +140,16 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
 `.1`, no truncation). Full D1 test matrix (below) + unit tests landed.
 
 ### 0b — false-positive & leak fixes
-- **FP1** — HexStrike passive allowlist (mirror of `BURP_PASSIVE_RE`) so read-only /
-  reporting / process tools (`get_live_dashboard`, `server_health`,
-  `create_vulnerability_report`, `get_telemetry`, `list_active_processes`,
-  `create_scan_summary`, `display_system_metrics`, …) stop false-blocking. Confirmed
-  broken: `get_live_dashboard {}` → exit 2 today.
+- **FP1 — DONE** (branch phase-0b). Explicit 20-tool `HEXSTRIKE_PASSIVE_TOOLS` allowlist
+  (not a broad pattern): read-only / reporting / process / local-file tools
+  (`get_live_dashboard`, `server_health`, `create_vulnerability_report`,
+  `create_scan_summary`, `get_telemetry`, `list_active_processes`, `list_files`, …), each
+  **verified against HexStrike source** to call a local backend endpoint only
+  (`api/cache`, `api/telemetry`, `api/processes`, `api/files`, `api/visual`,
+  `api/error-handling`) and send zero target traffic. Network-reaching tools (scanners,
+  `execute_command`, `install_python_package`, `generate_payload`, CVE-feed) deliberately
+  excluded and stay gated. One assertion per exempted tool + network-tool counter-tests.
+  Expect follow-up tuning (as the Burp allowlist needed).
 - **FP2** — `/engage` offers the apex when given a wildcard; the block message hints
   `acme.example not covered by *.acme.example`.
 - **FP3** — audit the real HexStrike/Burp tool arg schemas against `TARGET_KEYS`; reuse

@@ -64,6 +64,34 @@ BURP_PASSIVE_RE = re.compile(
     r"set_active_editor_contents)$"
 )
 
+# HexStrike read-only / local tools. Every name matches "hexstrike" in the active
+# pattern, so without this exemption the no-target ones fail closed and silently
+# block legitimate status/reporting calls (confirmed: get_live_dashboard,
+# create_vulnerability_report). Each tool below was verified against the HexStrike
+# source to call a LOCAL backend endpoint only (api/cache, api/telemetry,
+# api/processes, api/files, api/visual, api/error-handling, server health) and send
+# ZERO traffic to an engagement target. The failure mode of a wrong entry is a
+# silent scope bypass, so this is an explicit, per-tool allowlist (tested one by
+# one), NOT a broad pattern. Anything that reaches the network -- the scanners,
+# execute_command, execute_python_script, install_python_package (PyPI),
+# generate_payload, the CVE-feed tools -- is deliberately absent and stays gated.
+# Like the Burp allowlist, expect this to need follow-up tuning after real use.
+HEXSTRIKE_PASSIVE_TOOLS = frozenset({
+    "server_health", "get_cache_stats", "clear_cache", "get_telemetry",
+    "error_handling_statistics", "display_system_metrics",
+    "list_active_processes", "get_process_status", "get_process_dashboard",
+    "get_live_dashboard", "terminate_process", "pause_process", "resume_process",
+    "list_files", "create_file", "modify_file", "delete_file",
+    "create_vulnerability_report", "create_scan_summary", "format_tool_output_visual",
+})
+
+
+def _hexstrike_passive(name):
+    """True for a HexStrike tool proven to send no traffic to a target host."""
+    if "hexstrike" not in name.lower():
+        return False
+    return name.split("__")[-1] in HEXSTRIKE_PASSIVE_TOOLS
+
 
 def _now():
     return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -116,9 +144,11 @@ def _log(audit, record):
 
 def _is_active(tool_name):
     name = tool_name or ""
-    # Read-only / local Burp tools are passive even though their name matches
-    # "burp" in the active pattern -- let them through (they touch no target).
+    # Read-only / local Burp and HexStrike tools are passive even though their
+    # names match the active pattern -- let them through (they touch no target).
     if BURP_PASSIVE_RE.search(name):
+        return False
+    if _hexstrike_passive(name):
         return False
     pat = os.environ.get("IRICSTRIKE_ACTIVE_RE", DEFAULT_ACTIVE_RE)
     try:
