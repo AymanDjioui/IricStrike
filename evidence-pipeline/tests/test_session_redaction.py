@@ -51,6 +51,29 @@ class TestRedactSessionMaterial(unittest.TestCase):
         self.assertEqual(redact_session_material(""), "")
         self.assertEqual(redact_session_material(None), "")
 
+    def test_placeholder_is_constant_and_name_keyed(self):
+        # same field, different values -> identical redaction (stable diff)
+        a = redact_session_material("Cookie: session=AAAAAAAAAAAA")
+        b = redact_session_material("Cookie: session=BBBBBBBBBBBB")
+        self.assertEqual(a, b)
+        self.assertIn("<REDACTED:cookie:session>", a)
+
+    def test_query_param_secret_masked(self):
+        out = redact_session_material("curl https://api.acme.example/x?token=abc123&id=5")
+        self.assertNotIn("abc123", out)
+        self.assertIn("<REDACTED:query:token>", out)
+        self.assertIn("id=5", out)                      # benign param kept
+
+    def test_query_benign_params_kept(self):
+        out = redact_session_material("GET /x?keyword=hunt&monkey=yes HTTP/1.1")
+        self.assertIn("keyword=hunt", out)
+        self.assertIn("monkey=yes", out)
+
+    def test_query_access_token_masked(self):
+        out = redact_session_material("/cb?access_token=zzzzzzzz&state=ok")
+        self.assertNotIn("zzzzzzzz", out)
+        self.assertIn("state=ok", out)
+
 
 if __name__ == "__main__":
     unittest.main()

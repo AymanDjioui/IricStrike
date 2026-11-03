@@ -169,13 +169,39 @@ SESSION = "session"   # the redaction-class tag for live identity session materi
 
 _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}")
 
+# Query-string params whose VALUE is a secret, matched by param name. scan_text
+# does not cover query strings, and replay URLs carry them. Strong indicators
+# (token/session/auth) match as substrings too; "key" matches only as a whole
+# name or a delimiter-separated component, so "monkey"/"keyword" are untouched.
+_QUERY_SECRET_NAMES = {
+    "token", "api_key", "apikey", "session", "sessionid", "sid", "auth", "key",
+    "access_token", "auth_token", "secret", "password", "passwd", "pwd",
+}
+_QUERY_RE = re.compile(r"([?&])([A-Za-z0-9_.\-]+)=([^&\s#\"']*)")
+
+
+def _ph(cls, name=None):
+    """A CONSTANT, name-keyed redaction placeholder. The placeholder depends only
+    on the kind/name, never the value -- so the same field always redacts to the
+    same token and redaction cannot inject per-session variance into the diff."""
+    return f"<REDACTED:{cls}:{name.lower()}>" if name else f"<REDACTED:{cls}>"
+
+
+def _is_secret_param(name):
+    n = name.lower()
+    if n in _QUERY_SECRET_NAMES:
+        return True
+    if any(p in _QUERY_SECRET_NAMES for p in re.split(r"[_\-.]", n)):
+        return True
+    return any(s in n for s in ("token", "session", "auth"))
+
 
 def _redact_cookie_value(name, value):
     if _is_redacted(value):
         return value
     if name.lower() in SAFE_COOKIES:
         return value                      # CDN/analytics metadata -- safe to leave
-    return _mask(value)                   # session-bearing or unknown -> never echo
+    return _ph("cookie", name)            # session-bearing or unknown -> never echo
 
 
 def _redact_cookie_header(header, rest):
@@ -184,8 +210,8 @@ def _redact_cookie_header(header, rest):
         name, eq, value = first.partition("=")
         if not eq:
             return rest
-        masked = _redact_cookie_value(name.strip(), value.strip())
-        return f"{name.strip()}={masked}" + (f";{attrs}" if sep else "")
+        redacted = _redact_cookie_value(name.strip(), value.strip())
+        return f"{name.strip()}={redacted}" + (f";{attrs}" if sep else "")
     parts = []
     for seg in rest.split(";"):
         if "=" in seg:
@@ -202,22 +228,35 @@ def _redact_line(line):
     if m:
         scheme, tok = m.group(1), m.group(2)
         if tok is None:
-            return f"Authorization: {scheme if _is_redacted(scheme) else _mask(scheme)}"
-        return f"Authorization: {scheme} {tok if _is_redacted(tok) else _mask(tok)}"
+            return f"Authorization: {scheme if _is_redacted(scheme) else _ph('authorization')}"
+        return f"Authorization: {scheme} {tok if _is_redacted(tok) else _ph('authorization')}"
     m = re.match(r"(?i)^(x-api-key|api[_-]?key|apikey)\s*:\s*(\S+)\s*$", t)
     if m:
-        return f"{m.group(1)}: {m.group(2) if _is_redacted(m.group(2)) else _mask(m.group(2))}"
+        return f"{m.group(1)}: {m.group(2) if _is_redacted(m.group(2)) else _ph('header', m.group(1))}"
     m = re.match(r"(?i)^(set-cookie|cookie)\s*:\s*(.+)$", t)
     if m:
         return f"{m.group(1)}: {_redact_cookie_header(m.group(1), m.group(2))}"
     return line
 
 
+def _redact_query(text):
+    def repl(m):
+        sep, name, val = m.group(1), m.group(2), m.group(3)
+        if val and not _is_redacted(val) and _is_secret_param(name):
+            return f"{sep}{name}={_ph('query', name)}"
+        return m.group(0)
+    return _QUERY_RE.sub(repl, text)
+
+
 def redact_session_material(text) -> str:
-    """Return ``text`` with live session material masked: session/unknown cookie
-    values, Authorization/Bearer tokens, API-key headers, and JWTs anywhere. Safe
-    to store or print; idempotent; SAFE_COOKIES and already-masked values stay."""
+    """Return ``text`` with live session material replaced by CONSTANT, name-keyed
+    placeholders (``<REDACTED:cookie:session>`` etc.): session/unknown cookie
+    values, Authorization/Bearer tokens, API-key headers, JWTs anywhere, and
+    secret query-string params. Constant placeholders keep the identity diff
+    stable; the function is idempotent and leaves SAFE_COOKIES metadata. The slice
+    ALWAYS redacts before it normalizes/diffs, so a secret never reaches the diff."""
     if not text:
         return text or ""
     out = "\n".join(_redact_line(ln) for ln in str(text).splitlines())
-    return _JWT_RE.sub(lambda m: _mask(m.group(0)), out)
+    out = _JWT_RE.sub(lambda m: _ph("jwt"), out)
+    return _redact_query(out)

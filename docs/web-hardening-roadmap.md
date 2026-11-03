@@ -234,9 +234,16 @@ stub). Honor the bail-out (lock the shape, stub the rest).
 Status / order (redaction lands FIRST, before anything stores or prints a session value):
 - **Session-material redaction class — DONE.** `redact_session_material(text)` in
   `evidence_pipeline/redaction.py` (exported): masks session/unknown cookie values,
-  Authorization/Bearer tokens, API-key headers, and JWTs, unconditionally and everywhere;
-  idempotent; `SAFE_COOKIES` metadata left. A distinct class from your-account-secret
-  flagging — it REDACTS, not just flags. Tested incl. the raw-value no-leak invariant.
+  Authorization/Bearer tokens, API-key headers, JWTs, and secret query-string params
+  (`token`/`api_key`/`session`/`auth`/`key`, by name), unconditionally and everywhere.
+  Placeholders are **constant and name-keyed** (`<REDACTED:cookie:session>`), not
+  char-preserving masks, so redaction never injects per-session variance into the diff.
+  Idempotent; `SAFE_COOKIES` metadata left. A distinct class that REDACTS, not just flags.
+  Tested incl. the raw-value no-leak invariant and placeholder stability.
+- **Diff-normalizer stub — DONE.** `evidence_pipeline/normalize.py`: fixed order is
+  **redact → normalize → diff** (never diff first). Owns VARIANCE not secrecy; treats
+  `SAFE_COOKIES` as noise regardless of secrecy. `NOISE_CLASSES` names volatile-cookies /
+  csrf-token / timestamps / request-id / response-ordering (last named-only); crude stub.
 - TODO: identity block schema + loader; reserved `identity` arg (a|b, never inferred);
   audit `identity` field (empty allowed) from day one; curl **GET-only** replay that
   references the identity by name and never echoes the cookie; missing-identity preflight
