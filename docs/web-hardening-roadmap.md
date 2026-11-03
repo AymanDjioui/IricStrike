@@ -252,9 +252,15 @@ Status / order (redaction lands FIRST, before anything stores or prints a sessio
   `engagements/*/scope.yaml` and `.iricstrike/scope.yaml` are gitignored (real secrets
   never committed); `/engage` guardrail refuses an identity block on a non-ignored path.
   Added to CI.
-- TODO: reserved `identity` arg (a|b, never inferred); audit `identity` field (empty
-  allowed) from day one; curl **GET-only** replay that references the identity by name
-  and never echoes the cookie (redact→normalize→diff).
+- **Audit `identity` field — DONE (schema-only).** Every audit line now carries an
+  additive `identity` field (default `""`), the raw `IRICSTRIKE_IDENTITY` value from the
+  hook's env preserved exactly (no trimming/collapsing/truncation); the shared JSON
+  serializer escapes quotes/CR/LF so a hostile value stays one valid JSONL record.
+  Annotation for the writeup only: NOT a `TARGET_KEY`, never a decision input (an
+  out-of-scope target still blocks, an in-scope one still allows, with the annotation
+  set). The 176 existing scope-guard tests were unchanged; +5 new.
+- TODO: reserved `identity` arg (a|b, never inferred); curl **GET-only** replay that
+  references the identity by name and never echoes the cookie (redact→normalize→diff).
 
 ## Phase 1 — web capability
 - Recon-depth stages wired as **scope-gated** paths: `gau`/`waybackurls` (historical URLs),
