@@ -53,6 +53,14 @@ TIER2 = {"curl", "wget", "python3", "nc", "ncat", "openssl"}
 #: Binaries the plugin's own pipelines shell out to -- MUST be a subset of TIER1.
 PLUGIN_INVOKED = {"subfinder", "httpx", "nuclei", "gowitness"}
 
+#: Binaries the plugin shells out to that are LOCAL (zero network, no target):
+#: they need no scope gating (like cat/git), but the standing-rule test records
+#: them as a DELIBERATE non-tier-1 choice so a genuinely network-reaching binary
+#: can never slip through unclassified. Keep this tiny and justify each entry.
+LOCAL_EXEMPT = frozenset({
+    "pandoc",   # evidence-pipeline: markdown -> PDF report rendering, local only
+})
+
 #: Command prefixes that wrap another command; we skip past them (and their own
 #: option args) to find the real binary. "survive, don't parse argv".
 WRAPPERS = {
