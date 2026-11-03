@@ -226,9 +226,22 @@ Required cases, each in- and out-of-scope where applicable:
 ---
 
 ## Phase 0.5 — session / identity interface slice
-Implement D2 after 0a lands. Deliver the interface (scope.yaml `identity: {a,b}` block,
-explicit `identity` call arg, audit `identity` field, third redaction class, curl replay,
-diff-normalizer stub). Honor the bail-out.
+Branched off main as `phase-0.5-session-slice` after 0b merged (#3). Deliver the
+interface (scope.yaml `identity: {a,b}` block, explicit `identity` call arg, audit
+`identity` field, session-material redaction class, curl GET-only replay, diff-normalizer
+stub). Honor the bail-out (lock the shape, stub the rest).
+
+Status / order (redaction lands FIRST, before anything stores or prints a session value):
+- **Session-material redaction class — DONE.** `redact_session_material(text)` in
+  `evidence_pipeline/redaction.py` (exported): masks session/unknown cookie values,
+  Authorization/Bearer tokens, API-key headers, and JWTs, unconditionally and everywhere;
+  idempotent; `SAFE_COOKIES` metadata left. A distinct class from your-account-secret
+  flagging — it REDACTS, not just flags. Tested incl. the raw-value no-leak invariant.
+- TODO: identity block schema + loader; reserved `identity` arg (a|b, never inferred);
+  audit `identity` field (empty allowed) from day one; curl **GET-only** replay that
+  references the identity by name and never echoes the cookie; missing-identity preflight
+  error; diff-normalizer stub (names noise classes only); confirm gitignore covers the
+  identity-bearing scope.yaml.
 
 ## Phase 1 — web capability
 - Recon-depth stages wired as **scope-gated** paths: `gau`/`waybackurls` (historical URLs),

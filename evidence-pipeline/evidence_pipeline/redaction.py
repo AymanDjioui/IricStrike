@@ -152,3 +152,72 @@ def scan_text(text: str) -> list:
             seen.add(key)
             out.append(f)
     return out
+
+
+# -- active redaction of session material (Phase 0.5) ----------------------
+#
+# scan_text FLAGS what to redact; redact_session_material REDACTS. This is a
+# distinct redaction CLASS from your-account secrets / other-user PII: the session
+# slice holds per-identity session material (cookies, bearer/Authorization tokens)
+# and a live value must NEVER reach an artifact, the audit log, or the transcript.
+# So identity material is masked unconditionally and everywhere here -- not merely
+# flagged for review. It lands before anything in the slice stores or prints a
+# session value. SAFE_COOKIES metadata and already-masked values are left alone,
+# and the function is idempotent (re-running it does not double-mask).
+
+SESSION = "session"   # the redaction-class tag for live identity session material
+
+_JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}")
+
+
+def _redact_cookie_value(name, value):
+    if _is_redacted(value):
+        return value
+    if name.lower() in SAFE_COOKIES:
+        return value                      # CDN/analytics metadata -- safe to leave
+    return _mask(value)                   # session-bearing or unknown -> never echo
+
+
+def _redact_cookie_header(header, rest):
+    if header.lower() == "set-cookie":
+        first, sep, attrs = rest.partition(";")
+        name, eq, value = first.partition("=")
+        if not eq:
+            return rest
+        masked = _redact_cookie_value(name.strip(), value.strip())
+        return f"{name.strip()}={masked}" + (f";{attrs}" if sep else "")
+    parts = []
+    for seg in rest.split(";"):
+        if "=" in seg:
+            n, v = seg.split("=", 1)
+            parts.append(f"{n.strip()}={_redact_cookie_value(n.strip(), v.strip())}")
+        elif seg.strip():
+            parts.append(seg.strip())
+    return "; ".join(parts)
+
+
+def _redact_line(line):
+    t = line.strip()
+    m = re.match(r"(?i)^authorization\s*:\s*(\S+)(?:[ \t]+(\S+))?\s*$", t)
+    if m:
+        scheme, tok = m.group(1), m.group(2)
+        if tok is None:
+            return f"Authorization: {scheme if _is_redacted(scheme) else _mask(scheme)}"
+        return f"Authorization: {scheme} {tok if _is_redacted(tok) else _mask(tok)}"
+    m = re.match(r"(?i)^(x-api-key|api[_-]?key|apikey)\s*:\s*(\S+)\s*$", t)
+    if m:
+        return f"{m.group(1)}: {m.group(2) if _is_redacted(m.group(2)) else _mask(m.group(2))}"
+    m = re.match(r"(?i)^(set-cookie|cookie)\s*:\s*(.+)$", t)
+    if m:
+        return f"{m.group(1)}: {_redact_cookie_header(m.group(1), m.group(2))}"
+    return line
+
+
+def redact_session_material(text) -> str:
+    """Return ``text`` with live session material masked: session/unknown cookie
+    values, Authorization/Bearer tokens, API-key headers, and JWTs anywhere. Safe
+    to store or print; idempotent; SAFE_COOKIES and already-masked values stay."""
+    if not text:
+        return text or ""
+    out = "\n".join(_redact_line(ln) for ln in str(text).splitlines())
+    return _JWT_RE.sub(lambda m: _mask(m.group(0)), out)
