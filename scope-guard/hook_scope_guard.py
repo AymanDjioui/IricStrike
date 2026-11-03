@@ -24,12 +24,14 @@ Active scope is resolved via scope_guard.resolve_scope_path:
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # find scope_guard/
 
@@ -43,8 +45,22 @@ DEFAULT_ACTIVE_RE = (
 # Burp's MCP request-senders (send_http1_request, send_http2_request,
 # create_repeater_tab[_http2], send_to_intruder) all implement HttpServiceParams
 # and carry their destination in `targetHostname` -- hence it's a target key.
-TARGET_KEYS = ("target", "targets", "url", "urls", "host", "hostname",
-               "targethostname", "domain", "ip", "ip_address", "rhost", "rhosts")
+# Argument names that hold a host/IP/CIDR/URL the tool will CONTACT. DERIVED from
+# the HexStrike + Burp tool inventory (see docs/scope-guard-target-keys.md) -- not
+# guessed. Deliberately excludes path/file/body/payload/header/cookie/cred/port/
+# name args; those are regression-guarded in tests.
+TARGET_KEYS = (
+    "target", "targets", "url", "urls", "target_url", "base_url", "host",
+    "target_host", "hostname", "targethostname", "domain", "cidr",
+    "endpoint", "graphql_endpoint", "schema_url",
+    "ip", "ip_address", "rhost", "rhosts",
+)
+# Args holding a RAW HTTP request. The host comes from the request LINE only (never
+# the body), after base64-decoding. Burp senders normally carry targetHostname too
+# (used first); this is the fallback when a raw request has no explicit host arg.
+REQUEST_KEYS = ("content", "request", "raw_request", "raw", "http_request")
+_MAX_DEPTH = 6          # cap recursion into nested args
+_MAX_HOST_LEN = 2048    # a value longer than this is not a host/URL -- don't treat as one
 
 # Read-only / local-transform / config Burp MCP tools. They send NO traffic to a
 # target host (in Burp's MCP, only the HttpServiceParams senders above reach the
@@ -157,37 +173,98 @@ def _is_active(tool_name):
         return re.search(DEFAULT_ACTIVE_RE, name) is not None
 
 
+def _maybe_b64_request(value):
+    """If ``value`` is a base64-encoded HTTP request, return the decoded text.
+
+    A raw HTTP request has spaces/newlines early (``GET / HTTP/1.1``); base64 is
+    a single run of the base64 alphabet. Only decode when the result actually
+    looks like an HTTP request (contains ``HTTP/``)."""
+    t = "".join(str(value).split())
+    if len(t) < 16 or len(t) % 4 or not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", t):
+        return None
+    try:
+        dec = base64.b64decode(t, validate=True).decode("utf-8", "replace")
+    except (ValueError, UnicodeError):
+        return None
+    return dec if "HTTP/" in dec else None
+
+
+def _host_from_request(value):
+    """Host from a raw HTTP request's REQUEST LINE (absolute-URI) or Host header.
+
+    Decodes base64 first. Reads only the request line and the header block -- it
+    stops at the blank line, so the body is never scanned."""
+    text = _maybe_b64_request(value) or str(value)
+    lines = text.splitlines()
+    if not lines:
+        return None
+    m = re.match(r"^[A-Z]+\s+(\S+)\s+HTTP/", lines[0])
+    if m and "://" in m.group(1):
+        h = urlsplit(m.group(1)).hostname
+        if h:
+            return h
+    for line in lines[1:]:
+        if not line.strip():        # blank line = start of body; never go further
+            break
+        hm = re.match(r"(?i)^host:\s*(\S+)", line)
+        if hm:
+            return hm.group(1).split(":")[0]
+    return None
+
+
 def _extract_targets(tool_input):
-    """Collect target-bearing values, including ones nested inside objects.
+    """Collect target hosts from a tool's arguments.
 
-    Some tools nest the target (e.g. HexStrike's http_repeater puts it in
-    request_spec.url), so we walk the whole input and pick up any key named in
-    TARGET_KEYS at any depth. Still fail-closed: when nothing target-like is
-    found (e.g. a free-form ``command`` field), the caller blocks.
+    Walks nested args (depth-capped) and collects values of keys named in
+    TARGET_KEYS -- host/IP/CIDR/URL positions only (see
+    docs/scope-guard-target-keys.md). Every element of a multi-valued arg is
+    collected (the caller blocks if ANY is out of scope). Unrecognized keys are
+    ignored, not blocked. Values longer than _MAX_HOST_LEN are not hosts and are
+    skipped. When no host key is present, a raw request under a REQUEST_KEYS arg
+    is parsed for its request-line host (never the body). Empty result -> the
+    caller fails closed (block on MCP) / the Bash path warns.
     """
-    found = []
+    hosts, requests = [], []
 
-    def walk(obj):
+    def add(value):
+        for x in (value if isinstance(value, (list, tuple)) else [value]):
+            if isinstance(x, (str, int)) and x not in (None, ""):
+                s = str(x)
+                if len(s) <= _MAX_HOST_LEN:
+                    hosts.append(s)
+
+    def walk(obj, depth):
+        if depth > _MAX_DEPTH:
+            return
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if isinstance(k, str) and k.lower() in TARGET_KEYS and v not in (None, "", [], {}):
-                    if isinstance(v, (list, tuple)):
-                        found.extend(str(x) for x in v if x not in (None, ""))
-                    elif isinstance(v, (str, int)):
-                        found.append(str(v))
+                if isinstance(k, str) and v not in (None, "", [], {}):
+                    kl = k.lower()
+                    if kl in TARGET_KEYS:
+                        add(v)
+                    elif kl in REQUEST_KEYS and isinstance(v, str):
+                        requests.append(v)
                 if isinstance(v, (dict, list, tuple)):
-                    walk(v)
+                    walk(v, depth + 1)
         elif isinstance(obj, (list, tuple)):
             for item in obj:
-                walk(item)
+                walk(item, depth + 1)
 
-    walk(tool_input if isinstance(tool_input, dict) else {})
+    walk(tool_input if isinstance(tool_input, dict) else {}, 0)
+
     seen, out = set(), []
-    for t in found:
+    for t in hosts:
         if t not in seen:
             seen.add(t)
             out.append(t)
-    return out
+    if out:
+        return out
+    # fallback: no explicit host key -> host from a raw request's request line
+    for req in requests:
+        h = _host_from_request(req)
+        if h:
+            return [h]
+    return []
 
 
 def _block(audit, reason, **a):

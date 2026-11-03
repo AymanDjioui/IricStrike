@@ -157,8 +157,16 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
   explicitly out_of_scope. `/engage` offer (engage.md prose, reviewed not tested): when a
   wildcard is given and the apex is in neither list, ask once (explicit yes/no) before
   adding it — never silently.
-- **FP3** — audit the real HexStrike/Burp tool arg schemas against `TARGET_KEYS`; reuse
-  `capture.py:_target_from_request` to pull `Host` from raw-request fields.
+- **FP3 — DONE** (branch phase-0b). Inventoried all 150 HexStrike tool args (AST) + Burp
+  tools in `docs/scope-guard-target-keys.md` and **derived** `TARGET_KEYS` from the table
+  (added the real target positions that were missing and caused false blocks:
+  `target_url`, `base_url`, `target_host`, `endpoint`, `graphql_endpoint`, `schema_url`,
+  `cidr`; excluded `endpoints` [paths], `source_code_url` [3rd-party repo], ports, and all
+  file/body/payload/header/cookie/cred args). Walk is depth-capped and skips over-long
+  values; multi-valued args check every element; unrecognized keys are ignored, not
+  blocked. `REQUEST_KEYS` raw-request fallback takes the host from the request LINE
+  (base64-decoded), never the body. Ambiguity stays fail-closed on MCP / warn on Bash.
+  Regression test pins the non-target args. (Did NOT expand the passive list.)
 - **B3** — recon pipeline passes `-dr` / `-fhr` to nuclei (never bare `-fr`), closing the
   redirect-escapes-scope leak.
 - **B2** (optional) — resolve-and-recheck for `out_of_scope` **IP** entries so an excluded
