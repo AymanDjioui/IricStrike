@@ -25,7 +25,7 @@ from typing import Optional
 
 import yaml
 
-from .matcher import normalize_target, target_matches_entry
+from .matcher import is_ip, normalize_target, target_matches_entry
 
 PERMISSIVE_TYPES = {"ctf", "lab", "training"}
 STRICT_TYPES = {"bug-bounty", "bugbounty", "pentest", "self-owned", "infrastructure"}
@@ -156,7 +156,72 @@ class Scope:
             return False
         return True
 
-    def evaluate(self, target: str, today: Optional[_dt.date] = None) -> Decision:
+    def evaluate(self, target: str, today: Optional[_dt.date] = None,
+                 resolver=None) -> Decision:
+        """Evaluate a target. With a ``resolver`` (B2), an otherwise-allowed
+        hostname is rechecked: if it resolves to an out_of_scope IP it is blocked.
+        A DNS failure is never out-of-scope evidence -- on timeout/error the
+        allow stands (fail open)."""
+        d = self._evaluate_core(target, today)
+        if d.allowed and resolver is not None:
+            host = d.target
+            if host and "/" not in host and not is_ip(host):
+                blocked = self._dns_oos_recheck(host, resolver)
+                if blocked is not None:
+                    return blocked
+        return d
+
+    def _oos_ip_nets(self):
+        nets = getattr(self, "_oos_nets_cache", None)
+        if nets is None:
+            nets = [(e, n) for e in self.out_of_scope
+                    for n in (_entry_network(e),) if n is not None]
+            self._oos_nets_cache = nets
+        return nets
+
+    def _dns_oos_recheck(self, host, resolver):
+        """Recheck a hostname against out_of_scope IP entries by resolving it.
+
+        Returns a BLOCK Decision only when *every* resolved IP is out of scope;
+        a WARN+allow Decision on mixed resolution (some IPs out, some in -- common
+        with DNS round-robin / CDNs, so blocking the host outright would be too
+        aggressive); None when no resolved IP is out of scope or DNS failed (a DNS
+        failure is never out-of-scope evidence). Only out_of_scope IP/CIDR entries
+        matter here."""
+        oos_nets = self._oos_ip_nets()
+        if not oos_nets:
+            return None
+        ips = resolver.resolve(host)
+        if not ips:                      # DNS failure/timeout -> NOT evidence
+            return None
+        parsed, oos_ips, entries = [], set(), set()
+        for ip in ips:
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            parsed.append(ip)
+            for entry, net in oos_nets:
+                if addr.version == net.version and addr in net:
+                    oos_ips.add(ip)
+                    entries.add(entry)
+                    break
+        if not oos_ips:
+            return None                  # resolves only to in-scope IPs
+        entries = sorted(entries)
+        if all(ip in oos_ips for ip in parsed):
+            return Decision(
+                False, host,
+                f"{host} resolves only to out_of_scope IP(s) {sorted(oos_ips)} "
+                f"({', '.join(entries)})",
+                self.engagement, matched_entry=entries[0])
+        return Decision(            # mixed resolution -> warn, allow
+            True, host,
+            f"{host} has mixed resolution: {sorted(oos_ips)} in out_of_scope "
+            f"{entries}, other IPs in scope -- verify which host you reach",
+            self.engagement, matched_entry=entries[0], warn=True, overlaps=tuple(entries))
+
+    def _evaluate_core(self, target: str, today: Optional[_dt.date] = None) -> Decision:
         today = today or _dt.date.today()
         # A CIDR target is an address RANGE, not a single host -- detect it before
         # normalize_target (which would strip the mask) and check range overlap.
@@ -192,7 +257,18 @@ class Scope:
                                 f"target matches in_scope entry {entry!r}",
                                 self.engagement, entry)
 
-        # 5. fail-closed default.
+        # 5. fail-closed default. If the target is the bare apex of a wildcard-only
+        # scope, name the exact uncovered host and the fix (the wildcard-apex
+        # footgun) instead of the generic message. Reaching here means the apex is
+        # not in in_scope (the loop missed) and not in out_of_scope (step 2 would
+        # have returned), so this fires only when the apex is genuinely uncovered.
+        wildcard = _apex_wildcard(host, self.in_scope)
+        if wildcard:
+            return Decision(
+                False, host,
+                f"{host} not covered by {wildcard} (wildcard doesn't match the "
+                "apex) -- add it to scope.yaml in_scope or target a specific subdomain",
+                self.engagement)
         return Decision(False, host, "target not in scope (fail-closed default)",
                         self.engagement)
 
@@ -263,6 +339,16 @@ def _entry_network(entry):
             f"{entry}/{32 if ip.version == 4 else 128}", strict=False)
     except ValueError:
         return None
+
+
+def _apex_wildcard(host, in_scope):
+    """Return the wildcard entry whose apex is ``host`` (e.g. 'acme.example' ->
+    '*.acme.example'), or None. Used only to explain a fail-closed apex block."""
+    for entry in in_scope:
+        e = entry.strip().rstrip(".").lower()
+        if e.startswith("*.") and e[2:] == host:
+            return entry
+    return None
 
 
 def _parse_cidr(raw):

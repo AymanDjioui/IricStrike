@@ -6,7 +6,7 @@ from __future__ import annotations
 from .tools import subfinder, httpx_probe, nuclei_scan
 
 
-def run_recon(root, scope, runners=None, do_nuclei=False):
+def run_recon(root, scope, runners=None, do_nuclei=False, nuclei_args=None):
     """Run scope-gated recon from a root domain.
 
     scope: object with .evaluate(target) -> decision(.allowed, .reason).
@@ -43,6 +43,6 @@ def run_recon(root, scope, runners=None, do_nuclei=False):
         urls = [a.get("url") for a in result["alive"] if a.get("url")]
         # re-gate each probed URL's host defensively before scanning
         urls = [u for u in urls if scope.evaluate(u).allowed]
-        result["findings"] = nu(urls)
+        result["findings"] = nu(urls, extra_args=nuclei_args or [])
 
     return result

@@ -154,6 +154,34 @@ class TestHook(unittest.TestCase):
 
     # --- via project pointer file (what /engage writes) ---
 
+    def test_fp3_target_url_key_in_and_out(self):
+        ok = self._run({"tool_name": "mcp__hexstrike-ai__nuclei",
+                        "tool_input": {"target_url": "https://api.acme.example/x"}},
+                       self._with_scope_env())
+        self.assertEqual(ok.returncode, 0)
+        bad = self._run({"tool_name": "mcp__hexstrike-ai__nuclei",
+                         "tool_input": {"target_url": "https://blog.acme.example/x"}},
+                        self._with_scope_env())
+        self.assertEqual(bad.returncode, 2)
+
+    def test_fp3_raw_request_content_fallback(self):
+        inreq = "GET http://api.acme.example/x HTTP/1.1\r\nHost: api.acme.example\r\n\r\n"
+        ok = self._run({"tool_name": "mcp__burp__send_http1_request",
+                        "tool_input": {"content": inreq}}, self._with_scope_env())
+        self.assertEqual(ok.returncode, 0)
+        outreq = "GET http://blog.acme.example/x HTTP/1.1\r\nHost: blog.acme.example\r\n\r\n"
+        bad = self._run({"tool_name": "mcp__burp__send_http1_request",
+                         "tool_input": {"content": outreq}}, self._with_scope_env())
+        self.assertEqual(bad.returncode, 2)
+
+    def test_bare_apex_block_message_names_host(self):
+        # FP2: scanning the apex under wildcard-only scope -> explicit message
+        p = self._run({"tool_name": "mcp__hexstrike-ai__nmap",
+                       "tool_input": {"target": "acme.example"}}, self._with_scope_env())
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("acme.example", p.stderr)
+        self.assertIn("wildcard doesn't match the apex", p.stderr)
+
     def test_active_via_pointer_file(self):
         (self.d / ".iricstrike").mkdir()
         (self.d / ".iricstrike" / "active-scope").write_text(str(self.scope))

@@ -140,22 +140,49 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
 `.1`, no truncation). Full D1 test matrix (below) + unit tests landed.
 
 ### 0b — false-positive & leak fixes
-- **FP1** — HexStrike passive allowlist (mirror of `BURP_PASSIVE_RE`) so read-only /
-  reporting / process tools (`get_live_dashboard`, `server_health`,
-  `create_vulnerability_report`, `get_telemetry`, `list_active_processes`,
-  `create_scan_summary`, `display_system_metrics`, …) stop false-blocking. Confirmed
-  broken: `get_live_dashboard {}` → exit 2 today.
-- **FP2** — `/engage` offers the apex when given a wildcard; the block message hints
-  `acme.example not covered by *.acme.example`.
-- **FP3** — audit the real HexStrike/Burp tool arg schemas against `TARGET_KEYS`; reuse
-  `capture.py:_target_from_request` to pull `Host` from raw-request fields.
-- **B3** — recon pipeline passes `-dr` / `-fhr` to nuclei (never bare `-fr`), closing the
-  redirect-escapes-scope leak.
-- **B2** (optional) — resolve-and-recheck for `out_of_scope` **IP** entries so an excluded
-  IP cannot be reached by a hostname that resolves to it. **Needs a short resolver
-  timeout and a negative cache** (amendment); on timeout the lookup is treated as
-  unresolved (exclusion not strengthened — status quo), and failures are cached for the
-  session so a dead resolver doesn't slow every call.
+- **FP1 — DONE** (branch phase-0b). Explicit 20-tool `HEXSTRIKE_PASSIVE_TOOLS` allowlist
+  (not a broad pattern): read-only / reporting / process / local-file tools
+  (`get_live_dashboard`, `server_health`, `create_vulnerability_report`,
+  `create_scan_summary`, `get_telemetry`, `list_active_processes`, `list_files`, …), each
+  **verified against HexStrike source** to call a local backend endpoint only
+  (`api/cache`, `api/telemetry`, `api/processes`, `api/files`, `api/visual`,
+  `api/error-handling`) and send zero target traffic. Network-reaching tools (scanners,
+  `execute_command`, `install_python_package`, `generate_payload`, CVE-feed) deliberately
+  excluded and stay gated. One assertion per exempted tool + network-tool counter-tests.
+  Expect follow-up tuning (as the Burp allowlist needed).
+- **FP2 — DONE** (branch phase-0b). Block message (engine, tested): a bare apex blocked
+  under a wildcard-only scope names the literal host + why + fix ("acme.example not
+  covered by *.acme.example (wildcard doesn't match the apex) -- add it to scope.yaml
+  in_scope or target a specific subdomain"); silent when the apex is already in scope or
+  explicitly out_of_scope. `/engage` offer (engage.md prose, reviewed not tested): when a
+  wildcard is given and the apex is in neither list, ask once (explicit yes/no) before
+  adding it — never silently.
+- **FP3 — DONE** (branch phase-0b). Inventoried all 150 HexStrike tool args (AST) + Burp
+  tools in `docs/scope-guard-target-keys.md` and **derived** `TARGET_KEYS` from the table
+  (added the real target positions that were missing and caused false blocks:
+  `target_url`, `base_url`, `target_host`, `endpoint`, `graphql_endpoint`, `schema_url`,
+  `cidr`; excluded `endpoints` [paths], `source_code_url` [3rd-party repo], ports, and all
+  file/body/payload/header/cookie/cred args). Walk is depth-capped and skips over-long
+  values; multi-valued args check every element; unrecognized keys are ignored, not
+  blocked. `REQUEST_KEYS` raw-request fallback takes the host from the request LINE
+  (base64-decoded), never the body. Ambiguity stays fail-closed on MCP / warn on Bash.
+  Regression test pins the non-target args. (Did NOT expand the passive list.)
+- **B3 — DONE** (branch phase-0b). nuclei's default redirect handling is now `-fhr`
+  (follow same-host only — keeps in-scope coverage, can't walk off-scope); **never bare
+  `-fr`**; `-dr` stays opt-in (it loses coverage). If the operator passes their own
+  redirect flag (`-fr`/`-fhr`/`-dr`, long forms too) it is honored and no default added
+  (warned). Plumbed through `run_recon(nuclei_args=…)` and a repeatable `--nuclei-arg`.
+  Pure `_nuclei_cmd` builder tested for all three flags incl. deliberate `-fr`.
+- **B2 — DONE** (branch phase-0b). `Scope.evaluate(resolver=…)` rechecks an otherwise-
+  allowed hostname: if it resolves into an `out_of_scope` IP/CIDR it is blocked (reason
+  names host → IP → entry). A `netresolve.Resolver` does the lookup with a ~2s hard
+  timeout (threaded), positive + negative caches with TTL, and fail-open on any error.
+  **DNS failure is never out-of-scope evidence** — timeout/error keeps the allow. Only
+  runs when the scope has `out_of_scope` IP entries and the target is a hostname (no-op
+  otherwise), so the common case does zero DNS. Wired into the hook (both paths),
+  default-on, disable with `IRICSTRIKE_DNS_RECHECK=0`. Engine stays pure/I-O-free by
+  default (resolver injected); tested with a fake resolver + resolver cache/TTL/fail-open
+  tests.
 - **B2b — v4 CIDR range handling (amendment) — DONE (branch phase-0b-cidr-overlaps).**
   `Scope._evaluate_cidr` checks a scanned CIDR with `ipaddress` overlap/containment (no
   expansion): blocks only when the whole range is out of scope (no `in_scope` overlap, or
@@ -167,11 +194,13 @@ with `engagement: none`); `audit.jsonl` rotates at `IRICSTRIKE_AUDIT_CAP` (renam
 ### New pre-0a / Phase-0 items (amendments)
 - **Fail-open-but-loud on the Bash path** — specified in D1; called out here because it is
   a correctness requirement, not a nicety.
-- **Burp MCP preflight + documented start step.** The evidence-pipeline PoC path depends
-  on Burp, and Burp MCP is **dead right now** (`ECONNREFUSED` on `127.0.0.1:9876` during
-  the audit). Add: (a) a preflight that pings the endpoint and warns clearly if down,
-  surfaced from `/triage` / `/report`; (b) an explicit "start Burp, enable the MCP server
-  on 9876" step in the install docs.
+- **Burp MCP preflight + documented start step — DONE** (branch phase-0b).
+  `evidence_pipeline.burp_preflight.check_burp` TCP-checks `127.0.0.1:9876`; the
+  `python3 -m evidence_pipeline burp-preflight` CLI **warns, never hard-fails** (exits 0,
+  needs no engagement), so a machine without Burp is unaffected. Surfaced from `/triage`
+  (before Burp capture) and `/report`; the README install step says to start Burp and
+  enable its MCP on 9876. Injectable connector → tested without a real socket; a CLI test
+  confirms warn + exit 0.
 - **Audit-log cap or rotation.** Logging tier-1 decisions + tier-2 warns + bypasses will
   grow `audit.jsonl` fast; cap size and rotate (e.g. `audit.jsonl` → `audit.jsonl.1`).
 - **`scope.yaml` secrecy.** `engagements/` and `.iricstrike/` are **already fully
@@ -237,3 +266,19 @@ Codex CLI packaging.
 **Web coverage gaps:** no authenticated-identity model (biggest — IDOR/access-control need
 two sessions) → D2; recon depth lives only as skill prose → Phase 1; no OOB channel for
 blind classes → Phase 1; screenshots bypass the redaction gate → Phase 1.
+
+## Design notes (for the 0b PR description)
+
+- **pandoc / `LOCAL_EXEMPT`.** The standing-rule grep (below) flagged `pandoc`, which
+  the evidence pipeline shells for markdown→PDF. Rather than force it into TIER1
+  (which means "traffic-generating, hard-block" and would misrepresent it), it goes in
+  a small explicit `LOCAL_EXEMPT` set. The criterion is **no traffic to a target/scope
+  host**, not zero network: `pandoc --embed-resources` may fetch remote images, but
+  never a scope host. Each entry carries a one-line justification; if one ever starts
+  touching a scope host it moves to TIER2; the set is capped (~5) before it needs a
+  rethink.
+- **Standing rule, enforced by code.** `test_standing_rule` greps the plugin's own
+  source (`recon-pipeline/`, `evidence-pipeline/` Python; `commands/`, `scripts/`
+  Python + shell fences — `skills/` excluded as too noisy) for shelled-out binaries and
+  asserts each is classified (TIER1 / TIER2 / `LOCAL_EXEMPT`). `python3` (running the
+  plugin's own modules) is TIER2; the pipeline scanners are strictly TIER1.

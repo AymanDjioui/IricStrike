@@ -59,3 +59,7 @@ scope:
   infrastructure they own).
 - If the operator asks to touch something no engagement covers, do **not** edit
   `scope.yaml` to make it fit. Ask them to confirm authorization and run `/engage`.
+- **Wildcard apex:** `*.acme.example` does not cover the apex `acme.example`. When a
+  wildcard is given and the apex is in neither `in_scope` nor `out_of_scope`, ask once
+  (explicit yes/no) whether to add the apex — never add it silently; some programs
+  exclude the apex deliberately.

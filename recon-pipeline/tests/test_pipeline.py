@@ -15,6 +15,23 @@ class TestRecon(unittest.TestCase):
         self.assertFalse(r["root_allowed"])
         self.assertEqual(r["alive"], [])
 
+    def test_nuclei_args_flow_through_to_runner(self):
+        captured = {}
+
+        def fake_nuclei(urls, **k):
+            captured["extra_args"] = k.get("extra_args")
+            return []
+
+        fakes = {
+            "subfinder": lambda root, **k: ["api.acme.example"],
+            "httpx": lambda hosts, **k: [{"url": "https://api.acme.example",
+                                          "status_code": 200, "title": "ok"}],
+            "nuclei": fake_nuclei,
+        }
+        run_recon("acme.example", scope(), runners=fakes, do_nuclei=True,
+                  nuclei_args=["-fr"])
+        self.assertEqual(captured["extra_args"], ["-fr"])
+
     def test_discovered_hosts_are_scope_filtered(self):
         fakes = {
             "subfinder": lambda root, **k: ["api.acme.example", "secret.acme.example",

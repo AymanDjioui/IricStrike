@@ -24,12 +24,14 @@ Active scope is resolved via scope_guard.resolve_scope_path:
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # find scope_guard/
 
@@ -43,8 +45,28 @@ DEFAULT_ACTIVE_RE = (
 # Burp's MCP request-senders (send_http1_request, send_http2_request,
 # create_repeater_tab[_http2], send_to_intruder) all implement HttpServiceParams
 # and carry their destination in `targetHostname` -- hence it's a target key.
-TARGET_KEYS = ("target", "targets", "url", "urls", "host", "hostname",
-               "targethostname", "domain", "ip", "ip_address", "rhost", "rhosts")
+# Argument names that hold a host/IP/CIDR/URL the tool will CONTACT. DERIVED from
+# the HexStrike + Burp tool inventory (see docs/scope-guard-target-keys.md) -- not
+# guessed. Deliberately excludes path/file/body/payload/header/cookie/cred/port/
+# name args; those are regression-guarded in tests.
+TARGET_KEYS = (
+    "target", "targets", "url", "urls", "target_url", "base_url", "host",
+    "target_host", "hostname", "targethostname", "domain", "cidr",
+    "endpoint", "graphql_endpoint", "schema_url",
+    "ip", "ip_address", "rhost", "rhosts",
+)
+# endpoint vs endpoints: `endpoint` (singular; graphql_scanner) is a target URL, so
+# it is a key. `endpoints` (plural; api_fuzzer) is a comma-list of PATHS appended to
+# base_url -- not hosts -- so it is deliberately NOT a key.
+# Args holding a RAW HTTP request. The host comes from the request LINE only (never
+# the body), after base64-decoding. Burp senders normally carry targetHostname too
+# (used first); this is the fallback when a raw request has no explicit host arg.
+REQUEST_KEYS = ("content", "request", "raw_request", "raw", "http_request")
+_MAX_DEPTH = 6          # cap recursion into nested args
+# Values longer than this are not a host/URL and are skipped. MUST stay >= 253
+# (the max DNS name length) or a long-but-valid hostname would be dropped silently;
+# 2048 also comfortably admits long URLs while rejecting a dumped body/blob.
+_MAX_HOST_LEN = 2048
 
 # Read-only / local-transform / config Burp MCP tools. They send NO traffic to a
 # target host (in Burp's MCP, only the HttpServiceParams senders above reach the
@@ -64,6 +86,34 @@ BURP_PASSIVE_RE = re.compile(
     r"set_active_editor_contents)$"
 )
 
+# HexStrike read-only / local tools. Every name matches "hexstrike" in the active
+# pattern, so without this exemption the no-target ones fail closed and silently
+# block legitimate status/reporting calls (confirmed: get_live_dashboard,
+# create_vulnerability_report). Each tool below was verified against the HexStrike
+# source to call a LOCAL backend endpoint only (api/cache, api/telemetry,
+# api/processes, api/files, api/visual, api/error-handling, server health) and send
+# ZERO traffic to an engagement target. The failure mode of a wrong entry is a
+# silent scope bypass, so this is an explicit, per-tool allowlist (tested one by
+# one), NOT a broad pattern. Anything that reaches the network -- the scanners,
+# execute_command, execute_python_script, install_python_package (PyPI),
+# generate_payload, the CVE-feed tools -- is deliberately absent and stays gated.
+# Like the Burp allowlist, expect this to need follow-up tuning after real use.
+HEXSTRIKE_PASSIVE_TOOLS = frozenset({
+    "server_health", "get_cache_stats", "clear_cache", "get_telemetry",
+    "error_handling_statistics", "display_system_metrics",
+    "list_active_processes", "get_process_status", "get_process_dashboard",
+    "get_live_dashboard", "terminate_process", "pause_process", "resume_process",
+    "list_files", "create_file", "modify_file", "delete_file",
+    "create_vulnerability_report", "create_scan_summary", "format_tool_output_visual",
+})
+
+
+def _hexstrike_passive(name):
+    """True for a HexStrike tool proven to send no traffic to a target host."""
+    if "hexstrike" not in name.lower():
+        return False
+    return name.split("__")[-1] in HEXSTRIKE_PASSIVE_TOOLS
+
 
 def _now():
     return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -73,6 +123,25 @@ def _strip_query(target):
     """Drop the query string and fragment from a target before it is logged, so
     a token or secret carried in ``?...`` never reaches the audit trail."""
     return str(target).split("?", 1)[0].split("#", 1)[0]
+
+
+_RESOLVER_CACHE = {}
+
+
+def _resolver():
+    """Shared DNS resolver for the out_of_scope IP recheck (B2), or None when
+    disabled. The engine only resolves when the scope has out_of_scope IP
+    entries and the target is an otherwise-allowed hostname, so this is a no-op
+    for the common case. Set IRICSTRIKE_DNS_RECHECK=0 to turn it off."""
+    if os.environ.get("IRICSTRIKE_DNS_RECHECK", "1") == "0":
+        return None
+    if "r" not in _RESOLVER_CACHE:
+        try:
+            from scope_guard.netresolve import Resolver
+            _RESOLVER_CACHE["r"] = Resolver()
+        except Exception:
+            _RESOLVER_CACHE["r"] = None
+    return _RESOLVER_CACHE["r"]
 
 
 def _audit_path(scope_path, project_dir):
@@ -116,9 +185,11 @@ def _log(audit, record):
 
 def _is_active(tool_name):
     name = tool_name or ""
-    # Read-only / local Burp tools are passive even though their name matches
-    # "burp" in the active pattern -- let them through (they touch no target).
+    # Read-only / local Burp and HexStrike tools are passive even though their
+    # names match the active pattern -- let them through (they touch no target).
     if BURP_PASSIVE_RE.search(name):
+        return False
+    if _hexstrike_passive(name):
         return False
     pat = os.environ.get("IRICSTRIKE_ACTIVE_RE", DEFAULT_ACTIVE_RE)
     try:
@@ -127,37 +198,103 @@ def _is_active(tool_name):
         return re.search(DEFAULT_ACTIVE_RE, name) is not None
 
 
+def _maybe_b64_request(value):
+    """If ``value`` is a base64-encoded HTTP request, return the decoded text.
+
+    A raw HTTP request has spaces/newlines early (``GET / HTTP/1.1``); base64 is
+    a single run of the base64 alphabet. Only decode when the result actually
+    looks like an HTTP request (contains ``HTTP/``)."""
+    t = "".join(str(value).split())
+    if len(t) < 16 or len(t) % 4 or not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", t):
+        return None
+    try:
+        dec = base64.b64decode(t, validate=True).decode("utf-8", "replace")
+    except (ValueError, UnicodeError):
+        return None
+    return dec if "HTTP/" in dec else None
+
+
+def _host_from_request(value):
+    """Host from a raw HTTP request's REQUEST LINE (absolute-URI) or Host header.
+
+    Decodes base64 first. Reads only the request line and the header block -- it
+    stops at the blank line, so the body is never scanned."""
+    text = _maybe_b64_request(value) or str(value)
+    lines = text.splitlines()
+    if not lines:
+        return None
+    m = re.match(r"^[A-Z]+\s+(\S+)\s+HTTP/", lines[0])
+    if m and "://" in m.group(1):
+        h = urlsplit(m.group(1)).hostname
+        if h:
+            return h
+    for line in lines[1:]:
+        if not line.strip():        # blank line = start of body; never go further
+            break
+        hm = re.match(r"(?i)^host:\s*(\S+)", line)
+        if hm:
+            return hm.group(1).split(":")[0]
+    return None
+
+
 def _extract_targets(tool_input):
-    """Collect target-bearing values, including ones nested inside objects.
+    """Collect target hosts from a tool's arguments.
 
-    Some tools nest the target (e.g. HexStrike's http_repeater puts it in
-    request_spec.url), so we walk the whole input and pick up any key named in
-    TARGET_KEYS at any depth. Still fail-closed: when nothing target-like is
-    found (e.g. a free-form ``command`` field), the caller blocks.
+    Walks nested args (depth-capped) and collects values of keys named in
+    TARGET_KEYS -- host/IP/CIDR/URL positions only (see
+    docs/scope-guard-target-keys.md). Every element of a multi-valued arg is
+    collected (the caller blocks if ANY is out of scope). Unrecognized keys are
+    ignored, not blocked. Values longer than _MAX_HOST_LEN are not hosts and are
+    skipped. When no host key is present, a raw request under a REQUEST_KEYS arg
+    is parsed for its request-line host (never the body). Empty result -> the
+    caller fails closed (block on MCP) / the Bash path warns.
     """
-    found = []
+    hosts, requests = [], []
 
-    def walk(obj):
+    def add(value):
+        for x in (value if isinstance(value, (list, tuple)) else [value]):
+            if isinstance(x, (str, int)) and x not in (None, ""):
+                s = str(x)
+                if len(s) <= _MAX_HOST_LEN:
+                    hosts.append(s)
+
+    def walk(obj, depth):
+        if depth > _MAX_DEPTH:
+            return
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if isinstance(k, str) and k.lower() in TARGET_KEYS and v not in (None, "", [], {}):
-                    if isinstance(v, (list, tuple)):
-                        found.extend(str(x) for x in v if x not in (None, ""))
-                    elif isinstance(v, (str, int)):
-                        found.append(str(v))
+                if isinstance(k, str) and v not in (None, "", [], {}):
+                    kl = k.lower()
+                    if kl in TARGET_KEYS:
+                        add(v)
+                    elif kl in REQUEST_KEYS and isinstance(v, str):
+                        requests.append(v)
                 if isinstance(v, (dict, list, tuple)):
-                    walk(v)
+                    walk(v, depth + 1)
         elif isinstance(obj, (list, tuple)):
             for item in obj:
-                walk(item)
+                walk(item, depth + 1)
 
-    walk(tool_input if isinstance(tool_input, dict) else {})
+    walk(tool_input if isinstance(tool_input, dict) else {}, 0)
+
     seen, out = set(), []
-    for t in found:
+    for t in hosts:
         if t not in seen:
             seen.add(t)
             out.append(t)
-    return out
+    if out:
+        return out
+    # fallback: no explicit host key -> host from a raw request's request line.
+    # Best-effort: if a REQUEST_KEYS value is not a parseable request (e.g. an HTML
+    # body), parsing yields nothing and we fall through -- it never raises/blocks.
+    for req in requests:
+        try:
+            h = _host_from_request(req)
+        except Exception:
+            h = None
+        if h:
+            return [h]
+    return []
 
 
 def _block(audit, reason, **a):
@@ -254,7 +391,7 @@ def _handle_bash(tool_input, engine_ok, scope_path, audit):
     # when writing the log field (below), never to the evaluate() input.
     warned = False
     for t in targets:
-        d = scope.evaluate(t)
+        d = scope.evaluate(t, resolver=_resolver())
         if not d.allowed:
             _log(audit, {"event": "bash_deny", "tier": 1, "binaries": binaries,
                          "target": d.target, "reason": d.reason,
@@ -341,7 +478,7 @@ def main():
     # Decision runs on the FULL target; query strings are stripped only for the
     # audit log field below, so a ?token=... never reaches the trail.
     for tgt in targets:
-        d = scope.evaluate(tgt)
+        d = scope.evaluate(tgt, resolver=_resolver())
         if not d.allowed:
             _block(audit, f"{d.reason} [{d.target}]", tool=tool_name,
                    target=d.target, engagement=d.engagement)
