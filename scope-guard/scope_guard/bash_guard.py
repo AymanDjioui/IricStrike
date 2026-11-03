@@ -53,12 +53,16 @@ TIER2 = {"curl", "wget", "python3", "nc", "ncat", "openssl"}
 #: Binaries the plugin's own pipelines shell out to -- MUST be a subset of TIER1.
 PLUGIN_INVOKED = {"subfinder", "httpx", "nuclei", "gowitness"}
 
-#: Binaries the plugin shells out to that are LOCAL (zero network, no target):
-#: they need no scope gating (like cat/git), but the standing-rule test records
-#: them as a DELIBERATE non-tier-1 choice so a genuinely network-reaching binary
-#: can never slip through unclassified. Keep this tiny and justify each entry.
+#: Binaries the plugin shells out to that send NO traffic to a TARGET/scope host.
+#: The test is scope traffic, not network traffic: a tool may still hit the network
+#: for unrelated resources (pandoc --embed-resources fetches remote images) and
+#: still qualify, because none of that reaches an engagement target. Such tools need
+#: no gating (like cat/git), but the standing-rule test records them as a DELIBERATE
+#: non-tier-1 choice so a genuinely scope-reaching binary can never slip through
+#: unclassified. One justification line per entry; if an entry ever starts sending
+#: traffic to a scope host, move it to TIER2. Keep this small -- rethink past ~5.
 LOCAL_EXEMPT = frozenset({
-    "pandoc",   # evidence-pipeline: markdown -> PDF report rendering, local only
+    "pandoc",   # evidence-pipeline markdown->PDF; may fetch non-target assets, never a scope host
 })
 
 #: Command prefixes that wrap another command; we skip past them (and their own

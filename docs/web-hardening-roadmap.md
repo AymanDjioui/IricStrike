@@ -242,3 +242,19 @@ Codex CLI packaging.
 **Web coverage gaps:** no authenticated-identity model (biggest — IDOR/access-control need
 two sessions) → D2; recon depth lives only as skill prose → Phase 1; no OOB channel for
 blind classes → Phase 1; screenshots bypass the redaction gate → Phase 1.
+
+## Design notes (for the 0b PR description)
+
+- **pandoc / `LOCAL_EXEMPT`.** The standing-rule grep (below) flagged `pandoc`, which
+  the evidence pipeline shells for markdown→PDF. Rather than force it into TIER1
+  (which means "traffic-generating, hard-block" and would misrepresent it), it goes in
+  a small explicit `LOCAL_EXEMPT` set. The criterion is **no traffic to a target/scope
+  host**, not zero network: `pandoc --embed-resources` may fetch remote images, but
+  never a scope host. Each entry carries a one-line justification; if one ever starts
+  touching a scope host it moves to TIER2; the set is capped (~5) before it needs a
+  rethink.
+- **Standing rule, enforced by code.** `test_standing_rule` greps the plugin's own
+  source (`recon-pipeline/`, `evidence-pipeline/` Python; `commands/`, `scripts/`
+  Python + shell fences — `skills/` excluded as too noisy) for shelled-out binaries and
+  asserts each is classified (TIER1 / TIER2 / `LOCAL_EXEMPT`). `python3` (running the
+  plugin's own modules) is TIER2; the pipeline scanners are strictly TIER1.
