@@ -180,26 +180,46 @@ class Scope:
         return nets
 
     def _dns_oos_recheck(self, host, resolver):
-        """Return a block Decision if ``host`` resolves into an out_of_scope IP
-        entry, else None. Only out_of_scope IP/CIDR entries matter here."""
+        """Recheck a hostname against out_of_scope IP entries by resolving it.
+
+        Returns a BLOCK Decision only when *every* resolved IP is out of scope;
+        a WARN+allow Decision on mixed resolution (some IPs out, some in -- common
+        with DNS round-robin / CDNs, so blocking the host outright would be too
+        aggressive); None when no resolved IP is out of scope or DNS failed (a DNS
+        failure is never out-of-scope evidence). Only out_of_scope IP/CIDR entries
+        matter here."""
         oos_nets = self._oos_ip_nets()
         if not oos_nets:
             return None
         ips = resolver.resolve(host)
         if not ips:                      # DNS failure/timeout -> NOT evidence
             return None
+        parsed, oos_ips, entries = [], set(), set()
         for ip in ips:
             try:
                 addr = ipaddress.ip_address(ip)
             except ValueError:
                 continue
+            parsed.append(ip)
             for entry, net in oos_nets:
                 if addr.version == net.version and addr in net:
-                    return Decision(
-                        False, host,
-                        f"{host} resolves to {ip}, which is in out_of_scope {entry!r}",
-                        self.engagement, matched_entry=entry)
-        return None
+                    oos_ips.add(ip)
+                    entries.add(entry)
+                    break
+        if not oos_ips:
+            return None                  # resolves only to in-scope IPs
+        entries = sorted(entries)
+        if all(ip in oos_ips for ip in parsed):
+            return Decision(
+                False, host,
+                f"{host} resolves only to out_of_scope IP(s) {sorted(oos_ips)} "
+                f"({', '.join(entries)})",
+                self.engagement, matched_entry=entries[0])
+        return Decision(            # mixed resolution -> warn, allow
+            True, host,
+            f"{host} has mixed resolution: {sorted(oos_ips)} in out_of_scope "
+            f"{entries}, other IPs in scope -- verify which host you reach",
+            self.engagement, matched_entry=entries[0], warn=True, overlaps=tuple(entries))
 
     def _evaluate_core(self, target: str, today: Optional[_dt.date] = None) -> Decision:
         today = today or _dt.date.today()

@@ -29,8 +29,22 @@ class TestDnsRecheck(unittest.TestCase):
         r = FakeResolver({"shop.acme.example": ["203.0.113.200"]})
         d = s.evaluate("shop.acme.example", resolver=r)
         self.assertFalse(d.allowed)
-        self.assertIn("resolves to 203.0.113.200", d.reason)
+        self.assertIn("203.0.113.200", d.reason)
+        self.assertIn("out_of_scope", d.reason)
         self.assertIn("203.0.113.200", d.matched_entry)
+
+    def test_mixed_resolution_warns_not_blocks(self):
+        s = _scope(["*.acme.example"], ["203.0.113.200"])
+        r = FakeResolver({"shop.acme.example": ["203.0.113.200", "198.51.100.5"]})
+        d = s.evaluate("shop.acme.example", resolver=r)
+        self.assertTrue(d.allowed)                 # mixed -> allow, not block
+        self.assertTrue(d.warn)
+        self.assertIn("203.0.113.200", d.overlaps)
+
+    def test_all_oos_multiple_ips_blocks(self):
+        s = _scope(["*.acme.example"], ["203.0.113.0/24"])
+        r = FakeResolver({"shop.acme.example": ["203.0.113.5", "203.0.113.9"]})
+        self.assertFalse(s.evaluate("shop.acme.example", resolver=r).allowed)
 
     def test_hostname_resolving_to_clean_ip_allowed(self):
         s = _scope(["*.acme.example"], ["203.0.113.200"])

@@ -20,7 +20,12 @@ import time
 def _threaded_getaddrinfo(host, timeout):
     """getaddrinfo with a hard wall-clock timeout (getaddrinfo itself ignores
     socket.setdefaulttimeout for the DNS lookup). Returns a sorted list of IP
-    strings, or None on timeout/error."""
+    strings, or None on timeout/error.
+
+    The worker is a DAEMON thread: a slow getaddrinfo outlives our timeout, so we
+    abandon it and return None, and because it is daemon it can never block process
+    exit (and this runs per tool call). The Resolver's positive/negative caches
+    bound how often a fresh lookup -- hence a fresh thread -- is spawned at all."""
     res = {}
 
     def work():
@@ -32,7 +37,7 @@ def _threaded_getaddrinfo(host, timeout):
     t = threading.Thread(target=work, daemon=True)
     t.start()
     t.join(timeout)
-    if t.is_alive() or "err" in res:
+    if t.is_alive() or "err" in res:   # timed out (abandon daemon) or lookup failed
         return None
     return res.get("ips")
 
