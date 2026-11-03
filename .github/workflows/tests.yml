@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install deps
+        run: python -m pip install --upgrade pip PyYAML
+      - name: scope-guard
+        run: cd scope-guard && PYTHONPATH=. python3 -m unittest discover -s tests
+      - name: recon-pipeline
+        run: cd recon-pipeline && PYTHONPATH=".:../scope-guard" python3 -m unittest discover -s tests
+      - name: evidence-pipeline
+        run: cd evidence-pipeline && PYTHONPATH=".:../scope-guard" python3 -m unittest discover -s tests
