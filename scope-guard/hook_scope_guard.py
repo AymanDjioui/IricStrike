@@ -119,6 +119,16 @@ def _now():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def _identity():
+    """Operator-supplied identity annotation (IRICSTRIKE_IDENTITY), recorded on
+    every audit line to show which account a call was made as -- for the writeup
+    only. UNTRUSTED: it is NOT a TARGET_KEY and NEVER an input to any scope
+    decision; the gate ignores it. Sanitized (trimmed, single line, capped) so an
+    arbitrary env value can't corrupt the JSONL log."""
+    v = os.environ.get("IRICSTRIKE_IDENTITY", "")
+    return str(v).strip().replace("\n", " ").replace("\r", " ")[:64]
+
+
 def _strip_query(target):
     """Drop the query string and fragment from a target before it is logged, so
     a token or secret carried in ``?...`` never reaches the audit trail."""
@@ -172,6 +182,7 @@ def _rotate(audit):
 
 def _log(audit, record):
     record.setdefault("ts", _now())
+    record.setdefault("identity", _identity())   # annotation only; never a decision input
     if not audit:
         return
     try:
