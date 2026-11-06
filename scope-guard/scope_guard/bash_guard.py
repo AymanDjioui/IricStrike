@@ -88,7 +88,6 @@ FILE_EXTS = {
     "png", "jpg", "jpeg", "pdf", "zip", "gz",
 }
 
-_SEG_SPLIT = re.compile(r"[|;&\n()`]+")
 _ASSIGN_PREFIX = re.compile(r"^[A-Za-z_]\w*=")
 _ASSIGN = re.compile(r"(?:^|[;&|]|\s)([A-Za-z_]\w*)=([^\s;&|]+)")
 _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
@@ -173,11 +172,131 @@ def _binary_of_segment(toks):
     return None
 
 
+# Shell metacharacters that begin a new command context. The splitter below is
+# quote- and substitution-aware: a quoted literal (grep -E 'nmap|curl', or the
+# literal text "(nmap)") must not be mis-read as an invoked command, while genuine
+# command substitution -- $(...) and backticks, which execute even inside double
+# quotes -- is still followed into. Rules: | ; & and newline are literal inside
+# either quote; a bare ( ) is a subshell only when unquoted (literal text inside
+# double quotes); $( and a backtick open substitution in unquoted AND double-quoted
+# context; single quotes are fully literal; a backslash outside single quotes
+# escapes the next character. This is a focused segment scanner for command-context
+# boundaries only -- not a general shell parser (no word-splitting, globbing,
+# redirection, or expansion).
+_SEQ_OPS = "|;&\n"
+
+
+def _split_segments(command):
+    """Split a command into command-context segments, honoring shell quoting and
+    command substitution. Replaces the old quote-blind regex so quoted literal
+    separators cannot fabricate segments. Empty pieces are dropped and runs of
+    separators collapse, matching the previous ``[...]+`` behavior.
+
+    An unquoted ``#`` at a command word boundary begins a comment that runs to the
+    next newline (``#`` elsewhere -- mid-word, quoted, or right after a closing
+    substitution -- stays literal). The comment's bytes are discarded without
+    touching the quote/substitution stack, and its terminating newline is left in
+    place so it still acts as a command separator. ``word_start`` tracks that
+    boundary directly from the scan state: it is NOT inferred from the segment
+    buffer, so an escaped space (``\\ ``) or a closing ``$(...)``/`` `` `` cannot
+    manufacture a comment boundary."""
+    segs, buf = [], []
+    stack = ["code"]          # 'code' = unquoted or inside $()/`` ; 'sq','dq','bt'
+    i, n = 0, len(command)
+    word_start = True         # True iff the next unquoted char begins a new word
+
+    def flush():
+        if buf:
+            segs.append("".join(buf))
+            buf.clear()
+
+    while i < n:
+        c = command[i]
+        top = stack[-1]
+
+        if top == "sq":                       # single quotes: everything literal
+            buf.append(c)
+            if c == "'":
+                stack.pop()
+            word_start = False                 # inside/after a quoted word
+            i += 1
+            continue
+
+        if c == "\\":                        # escape next char (outside '...')
+            buf.append(c)
+            if i + 1 < n:
+                buf.append(command[i + 1])
+                i += 2
+            else:
+                i += 1
+            word_start = False                 # escaped char (incl. '\ ') is a word
+            continue
+
+        if top == "dq":                       # double quotes: literal except subst
+            if c == '"':
+                buf.append(c)
+                stack.pop()
+                word_start = False
+            elif c == "`":                     # backtick substitution -> follow in
+                flush()
+                stack.append("bt")
+                word_start = True              # a command begins inside the subst
+            elif c == "$" and i + 1 < n and command[i + 1] == "(":
+                flush()
+                stack.append("code")
+                i += 2
+                word_start = True              # a command begins inside the subst
+                continue
+            else:                              # bare ( ) | ; & are literal here
+                buf.append(c)
+                word_start = False
+            i += 1
+            continue
+
+        # code-like context (top in 'code' / 'bt'): operators are active
+        if c == "#" and word_start:            # unquoted comment -> to end-of-line
+            flush()                            # (newline left for the separator case)
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        if c == "'":
+            stack.append("sq"); buf.append(c); word_start = False
+        elif c == '"':
+            stack.append("dq"); buf.append(c); word_start = False
+        elif c == "`":
+            flush()
+            if top == "bt":
+                stack.pop()                    # closing backtick
+                word_start = False
+            else:
+                stack.append("bt")             # opening backtick
+                word_start = True              # a command begins inside the subst
+        elif c == "$" and i + 1 < n and command[i + 1] == "(":
+            flush(); stack.append("code"); i += 2; word_start = True; continue
+        elif c == "(":                         # unquoted subshell
+            flush(); stack.append("code"); word_start = True
+        elif c == ")":
+            flush()
+            if len(stack) > 1 and stack[-1] == "code":
+                stack.pop()
+            word_start = False                 # char after ')' continues a word
+        elif c in _SEQ_OPS:                    # pipe / sequence / background
+            flush(); word_start = True         # a new command follows the operator
+        elif c in " \t":                       # unquoted blank ends the current word
+            buf.append(c); word_start = True
+        else:
+            buf.append(c); word_start = False
+        i += 1
+
+    flush()
+    return segs
+
+
 def _classify(command: str):
     """Return ``(tier, binaries)``. tier is 1, 2, or None. tier 1 dominates."""
     found, saw_t2 = [], False
     tier1 = False
-    for seg in _SEG_SPLIT.split(command):
+    for seg in _split_segments(command):
         b = _binary_of_segment(seg.split())
         if not b:
             continue
