@@ -226,9 +226,47 @@ Required cases, each in- and out-of-scope where applicable:
 ---
 
 ## Phase 0.5 — session / identity interface slice
-Implement D2 after 0a lands. Deliver the interface (scope.yaml `identity: {a,b}` block,
-explicit `identity` call arg, audit `identity` field, third redaction class, curl replay,
-diff-normalizer stub). Honor the bail-out.
+Branched off main as `phase-0.5-session-slice` after 0b merged (#3). Deliver the
+interface (scope.yaml `identity: {a,b}` block, explicit `identity` call arg, audit
+`identity` field, session-material redaction class, curl GET-only replay, diff-normalizer
+stub). Honor the bail-out (lock the shape, stub the rest).
+
+Status / order (redaction lands FIRST, before anything stores or prints a session value):
+- **Session-material redaction class — DONE.** `redact_session_material(text)` in
+  `evidence_pipeline/redaction.py` (exported): masks session/unknown cookie values,
+  Authorization/Bearer tokens, API-key headers, JWTs, and secret query-string params
+  (`token`/`api_key`/`session`/`auth`/`key`, by name), unconditionally and everywhere.
+  Placeholders are **constant and name-keyed** (`<REDACTED:cookie:session>`), not
+  char-preserving masks, so redaction never injects per-session variance into the diff.
+  Idempotent; `SAFE_COOKIES` metadata left. A distinct class that REDACTS, not just flags.
+  Tested incl. the raw-value no-leak invariant and placeholder stability.
+- **Diff-normalizer stub — DONE.** `evidence_pipeline/normalize.py`: fixed order is
+  **redact → normalize → diff** (never diff first). Owns VARIANCE not secrecy; treats
+  `SAFE_COOKIES` as noise regardless of secrecy. `NOISE_CLASSES` names volatile-cookies /
+  csrf-token / timestamps / request-id / response-ordering (last named-only); crude stub.
+- **Identity block + loader + preflight — DONE.** New `session-slice/` package (separate
+  from the frozen guard): `identity: {a, b}` block in scope.yaml (placeholder example in
+  `scope-guard/examples/scope.bugbounty.yaml`), `load_identities` (names restricted to
+  a/b), `require_identity` missing-identity preflight with a clear error, and an
+  `Identity` whose `repr` never echoes the cookie/header values. Confirmed
+  `engagements/*/scope.yaml` and `.iricstrike/scope.yaml` are gitignored (real secrets
+  never committed); `/engage` guardrail refuses an identity block on a non-ignored path.
+  Added to CI.
+- **Audit `identity` field — DONE (schema-only).** Every audit line now carries an
+  additive `identity` field (default `""`), the raw `IRICSTRIKE_IDENTITY` value from the
+  hook's env preserved exactly (no trimming/collapsing/truncation); the shared JSON
+  serializer escapes quotes/CR/LF so a hostile value stays one valid JSONL record.
+  Annotation for the writeup only: NOT a `TARGET_KEY`, never a decision input (an
+  out-of-scope target still blocks, an in-scope one still allows, with the annotation
+  set). The 176 existing scope-guard tests were unchanged; +5 new.
+- **Reserved identity arg + curl GET-only replay — DONE.** `session_slice.replay_get(url,
+  identity_name, …)`: identity is explicit via `require_identity` (never inferred); curl
+  is GET-only, no `-L` (redirects not followed), no `-v`, `--max-time` bounded, sends ONLY
+  that identity's cookie+headers (no ambient merge); target scope-checked first (frozen
+  engine, read-only). Response (headers+body) is run redact→normalize before return, so
+  the raw cookie never comes back — tested as the no-leak invariant.
+- Interface slice is now shaped end to end. Capstone remaining (thin): a two-identity diff
+  that replays `a` and `b` and diffs the normalized outputs.
 
 ## Phase 1 — web capability
 - Recon-depth stages wired as **scope-gated** paths: `gau`/`waybackurls` (historical URLs),

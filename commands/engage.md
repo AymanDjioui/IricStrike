@@ -63,3 +63,10 @@ scope:
   wildcard is given and the apex is in neither `in_scope` nor `out_of_scope`, ask once
   (explicit yes/no) whether to add the apex — never add it silently; some programs
   exclude the apex deliberately.
+- **Identities (session slice):** an optional `identity:` block declares at most two
+  authenticated accounts, `a` and `b`, each with a session cookie / headers, for
+  access-control / IDOR testing. A session cookie is a **secret**: only ever write real
+  identity material into an engagement `scope.yaml` under `engagements/` or
+  `.iricstrike/` (both gitignored) — never into a tracked file or the example scopes.
+  If asked to add an identity to a scope.yaml that is not on a gitignored path, refuse
+  and move the engagement under `engagements/` first.
