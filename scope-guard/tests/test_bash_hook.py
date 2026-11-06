@@ -195,6 +195,43 @@ class TestBashHook(unittest.TestCase):
         self.assertTrue(self.audit.exists())        # fresh current log
 
 
+    # -- quoted-separator false positive (Kali regression) ---------------
+
+    KALI_CMD = (
+        "grep -E 'loopback-guard-validation|127\\.0\\.0\\.[23]|nmap|curl' "
+        "/home/kali/IricStrike/.iricstrike/audit.jsonl "
+        "| python3 -m json.tool --json-lines 2>/dev/null "
+        "|| grep -E 'loopback-guard-validation|127\\.0\\.0\\.[23]|nmap|curl' "
+        "/home/kali/IricStrike/.iricstrike/audit.jsonl"
+    )
+
+    def test_kali_quoted_command_not_blocked(self):
+        # exact Kali command through the hook: quoted 'nmap'/'curl' must not make
+        # it tier-1; the real tool is python3 (tier-2) -> warn + allow, not deny.
+        p = self._run(self.KALI_CMD)
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(self._last()["event"], "bash_warn")
+        self.assertEqual(self._last()["tier"], 2)
+
+    def test_literal_paren_text_not_blocked(self):
+        # literal "(nmap)" text is not a tier-1 invocation -> untouched (no log)
+        p = self._run('echo "(nmap)"')
+        self.assertEqual(p.returncode, 0)
+        self.assertFalse(self.audit.exists())
+
+    def test_unquoted_pipeline_tier1_out_of_scope_still_blocks(self):
+        # a genuine tier-1 after an unquoted pipe, out-of-scope target -> blocks
+        p = self._run(f"echo x | nmap {OUT}")
+        self.assertEqual(p.returncode, 2)
+        self.assertEqual(self._last()["event"], "bash_deny")
+
+    def test_command_substitution_tier1_out_of_scope_still_blocks(self):
+        # $(...) executes even inside double quotes -> nmap seen, OUT target blocks
+        p = self._run(f'echo "$(nmap {OUT})"')
+        self.assertEqual(p.returncode, 2)
+        self.assertEqual(self._last()["event"], "bash_deny")
+
+
 class TestCidrHook(unittest.TestCase):
     """CIDR range handling end-to-end through the hook, both paths (Phase 0b)."""
 

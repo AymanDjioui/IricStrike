@@ -56,7 +56,7 @@ def _line_binaries(line):
     if not line or line.startswith("#") or _YAML_KEY.match(line):
         return set()
     out = set()
-    for seg in BG._SEG_SPLIT.split(line):
+    for seg in BG._split_segments(line):
         b = BG._binary_of_segment(seg.split())
         if not b:
             continue

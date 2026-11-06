@@ -132,5 +132,66 @@ class TestAssess(unittest.TestCase):
         self.assertEqual(a["targets"], ["blog.acme.example"])
 
 
+class TestQuotedSeparators(unittest.TestCase):
+    """Kali regression: a quoted literal separator (or literal paren text) must not
+    fabricate a command segment, while genuine command substitution is still
+    followed into. Classification/assessment only -- tiers, target extraction,
+    matching, and failure policy are unchanged. (The embedded commands are parser
+    inputs and are never executed.)"""
+
+    # the exact command wrongly blocked during Kali validation: its single-quoted
+    # '...|nmap|curl' alternation was read as a pipeline, surfacing nmap as tier-1.
+    KALI_CMD = (
+        "grep -E 'loopback-guard-validation|127\\.0\\.0\\.[23]|nmap|curl' "
+        "/home/kali/IricStrike/.iricstrike/audit.jsonl "
+        "| python3 -m json.tool --json-lines 2>/dev/null "
+        "|| grep -E 'loopback-guard-validation|127\\.0\\.0\\.[23]|nmap|curl' "
+        "/home/kali/IricStrike/.iricstrike/audit.jsonl"
+    )
+
+    def test_kali_command_is_tier2_not_tier1(self):
+        a = assess(self.KALI_CMD)
+        self.assertEqual(a["tier"], 2)            # python3 is the only real tool
+        self.assertNotIn("nmap", a["binaries"])   # quoted literals are not binaries
+        self.assertNotIn("curl", a["binaries"])
+
+    # -- quoted literals / escapes must not classify ---------------------
+    def test_single_quoted_alternation(self):
+        self.assertIsNone(classify("grep -E 'nmap|curl' f.log"))
+
+    def test_double_quoted_alternation(self):
+        self.assertIsNone(classify('grep -E "nmap|curl" f.log'))
+
+    def test_literal_paren_text_in_double_quotes(self):
+        # "(nmap)" is literal text, not a subshell -> not an invocation
+        self.assertIsNone(classify('echo "(nmap)"'))
+
+    def test_escaped_separator_is_literal(self):
+        self.assertIsNone(classify(r"echo a\; nmap x"))
+
+    def test_escaped_quotes_are_literal(self):
+        self.assertIsNone(classify('echo \\"nmap\\" x'))
+
+    # -- genuine invocations are still detected --------------------------
+    def test_unquoted_semicolon_still_tier1(self):
+        self.assertEqual(classify("echo a; nmap x"), 1)
+
+    def test_unquoted_pipeline_still_tier1(self):
+        self.assertEqual(classify("cat subs.txt | httpx"), 1)
+
+    def test_unquoted_subshell_still_tier1(self):
+        self.assertEqual(classify("(nmap x)"), 1)
+
+    def test_dollar_paren_substitution_detected(self):
+        self.assertEqual(classify("echo $(nmap x)"), 1)
+
+    def test_backtick_substitution_detected(self):
+        self.assertEqual(classify("echo `nmap x`"), 1)
+
+    def test_substitution_inside_double_quotes_detected(self):
+        # $(...) executes even within double quotes -> inner nmap is seen
+        self.assertEqual(classify('echo "$(printf x | nmap y)"'), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
