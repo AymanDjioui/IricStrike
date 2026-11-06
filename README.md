@@ -83,10 +83,12 @@ For development, load it in place instead with `--plugin-dir /path/to/IricStrike
 validate with `claude plugin validate /path/to/IricStrike` — or, without the CLI,
 `python3 scripts/validate.py`.
 
-**Requirements:** Python 3.10+ with `PyYAML` and the MCP Python SDK (`mcp`) for the
-scope-guard server; `gowitness` for the recon-screenshot path; and the external
-tool-execution MCP servers below. Then run **`/engage`** to declare an engagement —
-active tools are scope-gated from that point on.
+**Requirements:** Python 3.10+. Install the scope-guard server's Python
+dependencies with `pip install -r scope-guard/requirements.txt` — `PyYAML` and the
+MCP Python SDK, pinned **`mcp<2`** (`server.py` uses the v1 FastMCP API, which mcp
+2.x renamed and dropped). Also `gowitness` for the recon-screenshot path; and the
+external tool-execution MCP servers below. Then run **`/engage`** to declare an
+engagement — active tools are scope-gated from that point on.
 
 ### External tool-execution MCP servers (you configure these)
 
